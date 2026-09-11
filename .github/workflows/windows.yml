@@ -53,32 +53,38 @@ jobs:
           path: artifacts/test-results/
           if-no-files-found: warn
 
-      # Written to the job summary as well as uploaded, so the names are readable in the run page
-      # itself. The artifact needs a download to say anything, and the log needs rights a contributor
-      # does not have - neither is much use while standing in front of a red run.
+      # The verdict also goes to a step output, and the step below puts it in its own name. That is
+      # not decoration: subprocess output is readable only with repository admin rights, while a
+      # step's name is readable by anyone through the API, so a failure the name carries can actually
+      # be diagnosed by whoever is looking at the run.
       - name: Summarise the test results
+        id: summary
         if: always()
         shell: pwsh
         run: |
           $files = Get-ChildItem artifacts/test-results -Filter '*.trx' -ErrorAction SilentlyContinue
 
           if (-not $files) {
-            Add-Content $env:GITHUB_STEP_SUMMARY 'No test result file was produced.'
+            $verdict = 'NO RESULT FILE WAS WRITTEN - the tests did not run to completion'
+            $verdict | Add-Content $env:GITHUB_STEP_SUMMARY
+            Write-Host $verdict
+            "verdict=$verdict" | Add-Content $env:GITHUB_OUTPUT
             exit 0
           }
 
           $results = $files | ForEach-Object { [xml](Get-Content $_.FullName) }
           $lines = @()
+          $failedNames = @()
 
           foreach ($result in $results) {
             $counters = $result.TestRun.ResultSummary.Counters
             $lines += "Passed $($counters.passed), failed $($counters.failed), skipped $($counters.notExecuted), total $($counters.total)."
             $lines += ''
 
-            $failed = $result.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -eq 'Failed' }
-
-            foreach ($test in $failed) {
+            foreach ($test in $result.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -eq 'Failed' }) {
+              $failedNames += $test.testName
               $lines += "FAILED  $($test.testName)"
+
               $message = $test.Output.ErrorInfo.Message
               $stack = $test.Output.ErrorInfo.StackTrace
 
@@ -92,15 +98,15 @@ jobs:
           $lines | Add-Content $env:GITHUB_STEP_SUMMARY
           Write-Host ($lines -join "`n")
 
-      - name: Fail if the tests failed
+          $verdict = if ($failedNames) { "TEST FAILURES: $($failedNames -join ', ')" } else { 'the tests passed' }
+          "verdict=$verdict" | Add-Content $env:GITHUB_OUTPUT
+
+      # Named from the verdict so the failing tests are the step's own name. Keep it to one line.
+      - name: Result - ${{ steps.summary.outputs.verdict }}
         if: steps.test.outcome != 'success'
         shell: pwsh
         run: |
-          $trx = Get-ChildItem artifacts/test-results -Filter '*.trx' -ErrorAction SilentlyContinue
-          $presence = if ($trx) { "a result file was written ($($trx.Length) bytes)" } else { 'NO RESULT FILE WAS WRITTEN' }
-
-          Write-Host "The test command did not succeed; $presence."
-          Write-Host 'The names and messages are on the test-results artifact and in the job summary.'
+          Write-Host 'The test step failed. The full messages are on the test-results artifact and in the job summary.'
           exit 1
 
       - name: Publish
