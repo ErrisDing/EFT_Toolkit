@@ -21,6 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pinned to 8.0.x by global.json, and this installs the SDK it names. A runner that resolves
+      # its newest SDK instead would break the tests rather than the build: xunit.v3 runs on
+      # Microsoft.Testing.Platform, and a .NET 10 SDK refuses to drive that through the VSTest
+      # target, which fails before a single test starts.
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
@@ -36,37 +40,11 @@ jobs:
       # The hardware category is the tests that need a real display or a real audio endpoint. They are
       # skipped rather than faked, and they are not part of the release gate; the manual checklist is
       # what covers what they would have covered.
-      #
-      # The result file is written whatever the outcome and uploaded below, because a failing run that
-      # says only "exit code 1" cannot be acted on: the failing test's name and message are the whole
-      # of the diagnosis, and the raw log needs repository admin rights to read.
       - name: Test
-        id: test
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          # The whole output is kept, not just the trx. A test host that dies before the tests run
-          # writes no trx at all, and the reason is then only in this output - which is the case this
-          # was written for.
-          #
-          # Captured into a variable rather than piped, because $LASTEXITCODE is only the command's
-          # own code when nothing follows it in the pipeline.
-          $output = dotnet test EftToolkit.sln `
-            --configuration Release `
-            --no-build `
-            --filter 'Category!=Hardware' `
-            --logger "trx;LogFileName=test-results.trx" `
-            --results-directory artifacts/test-results `
-            --verbosity normal *>&1
+        run: dotnet test EftToolkit.sln --configuration Release --no-build --filter 'Category!=Hardware' --logger "trx;LogFileName=test-results.trx" --results-directory artifacts/test-results
 
-          $exitCode = $LASTEXITCODE
-
-          $output | ForEach-Object { Write-Host $_ }
-          New-Item -ItemType Directory -Force artifacts/test-results | Out-Null
-          $output | Out-File artifacts/test-results/test-output.log
-
-          exit $exitCode
-
+      # Uploaded whatever the outcome: when a test fails this file holds the assertion message, and
+      # when the run fails before the tests start it is absent, which is itself the diagnosis.
       - name: Upload the test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -74,72 +52,6 @@ jobs:
           name: test-results
           path: artifacts/test-results/
           if-no-files-found: warn
-
-      # The verdict also goes to a step output, and the step below puts it in its own name. That is
-      # not decoration: subprocess output is readable only with repository admin rights, while a
-      # step's name is readable by anyone through the API, so a failure the name carries can actually
-      # be diagnosed by whoever is looking at the run.
-      - name: Summarise the test results
-        id: summary
-        if: always()
-        shell: pwsh
-        run: |
-          $files = Get-ChildItem artifacts/test-results -Filter '*.trx' -ErrorAction SilentlyContinue
-
-          if (-not $files) {
-            $verdict = 'NO RESULT FILE WAS WRITTEN - the tests did not run to completion'
-            $verdict | Add-Content $env:GITHUB_STEP_SUMMARY
-            Write-Host $verdict
-
-            # Without a result file, the command's own output is the only account of what happened.
-            $log = 'artifacts/test-results/test-output.log'
-
-            if (Test-Path $log) {
-              $tail = Get-Content $log -Tail 60
-              $tail | Add-Content $env:GITHUB_STEP_SUMMARY
-              Write-Host ($tail -join "`n")
-            }
-
-            "verdict=$verdict" | Add-Content $env:GITHUB_OUTPUT
-            exit 0
-          }
-
-          $results = $files | ForEach-Object { [xml](Get-Content $_.FullName) }
-          $lines = @()
-          $failedNames = @()
-
-          foreach ($result in $results) {
-            $counters = $result.TestRun.ResultSummary.Counters
-            $lines += "Passed $($counters.passed), failed $($counters.failed), skipped $($counters.notExecuted), total $($counters.total)."
-            $lines += ''
-
-            foreach ($test in $result.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -eq 'Failed' }) {
-              $failedNames += $test.testName
-              $lines += "FAILED  $($test.testName)"
-
-              $message = $test.Output.ErrorInfo.Message
-              $stack = $test.Output.ErrorInfo.StackTrace
-
-              if ($message) { $lines += "        $message" }
-              if ($stack) { $lines += "        $($stack -split "`n" | Select-Object -First 4)" }
-
-              $lines += ''
-            }
-          }
-
-          $lines | Add-Content $env:GITHUB_STEP_SUMMARY
-          Write-Host ($lines -join "`n")
-
-          $verdict = if ($failedNames) { "TEST FAILURES: $($failedNames -join ', ')" } else { 'the tests passed' }
-          "verdict=$verdict" | Add-Content $env:GITHUB_OUTPUT
-
-      # Named from the verdict so the failing tests are the step's own name. Keep it to one line.
-      - name: Result - ${{ steps.summary.outputs.verdict }}
-        if: steps.test.outcome != 'success'
-        shell: pwsh
-        run: |
-          Write-Host 'The test step failed. The full messages are on the test-results artifact and in the job summary.'
-          exit 1
 
       - name: Publish
         run: pwsh -File scripts/publish.ps1
