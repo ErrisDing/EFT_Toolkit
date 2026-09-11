@@ -1,0 +1,81 @@
+name: windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+jobs:
+  build-test-publish:
+    name: Build, test, and publish (Windows 11 x64)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore EftToolkit.sln
+
+      # -warnaserror matches TreatWarningsAsErrors in Directory.Build.props: a warning that is not a
+      # failure on a developer's machine is not a warning anyone reads.
+      - name: Build
+        run: dotnet build EftToolkit.sln --configuration Release --no-restore -warnaserror
+
+      # The hardware category is the tests that need a real display or a real audio endpoint. They are
+      # skipped rather than faked, and they are not part of the release gate; the manual checklist is
+      # what covers what they would have covered.
+      - name: Test
+        run: dotnet test EftToolkit.sln --configuration Release --no-build --filter 'Category!=Hardware'
+
+      - name: Publish
+        run: pwsh -File scripts/publish.ps1
+
+      - name: Reject ASIO dependencies and artifacts
+        shell: pwsh
+        run: |
+          $dependencyMatches = dotnet list src/EftToolkit.Audio/EftToolkit.Audio.csproj package --include-transitive |
+            Select-String -Pattern 'NAudio\.Asio'
+          $fileMatches = Get-ChildItem artifacts/publish/win-x64 -Recurse | Where-Object Name -Match 'asio'
+
+          if ($dependencyMatches) {
+            Write-Host $dependencyMatches
+            throw 'An ASIO dependency is present in the audio project.'
+          }
+
+          if ($fileMatches) {
+            Write-Host $fileMatches
+            throw 'An ASIO file is present in the published artifact.'
+          }
+
+      - name: Assert the audio backend is NAudio.Wasapi, and only that
+        shell: pwsh
+        run: |
+          # Explicitly not the NAudio meta-package, which would drag in the parts of NAudio this
+          # toolkit has decided not to carry, and not NAudio.Asio, which it must never carry.
+          $packages = (dotnet list src/EftToolkit.Audio/EftToolkit.Audio.csproj package --include-transitive | Out-String)
+
+          Write-Host $packages
+
+          if ($packages -notmatch 'NAudio\.Wasapi\s+2\.4\.0') {
+            throw 'NAudio.Wasapi 2.4.0 is not the audio backend.'
+          }
+
+          if ($packages -match '(?m)^\s*>?\s*NAudio\s+\d') {
+            throw 'The NAudio meta-package is referenced.'
+          }
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eft-toolkit-win-x64
+          path: artifacts/publish/win-x64
+          if-no-files-found: error
