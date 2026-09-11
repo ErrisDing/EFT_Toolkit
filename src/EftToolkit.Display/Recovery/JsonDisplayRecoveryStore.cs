@@ -10,9 +10,16 @@ namespace EftToolkit.Display.Recovery;
 /// are still recoverable, and discarding them would strand the user with changed ramps.
 /// </summary>
 /// <remarks>
-/// Writes are serialized against each other. The module persists from the display worker and from a
-/// topology refresh, and the temporary file has a fixed name, so two concurrent saves would
-/// otherwise collide on it rather than one simply winning the race.
+/// <para>
+/// Writes are serialized against each other: the module persists from the display worker and from a
+/// topology refresh, so two concurrent saves would otherwise collide rather than one simply winning
+/// the race.
+/// </para>
+/// <para>
+/// That gate only covers one instance, and the file is not private to one. Each save therefore writes
+/// to a temporary name of its own and moves that into place, so a save that overlaps another store's
+/// save is a last-writer-wins race rather than a failed write.
+/// </para>
 /// </remarks>
 public sealed class JsonDisplayRecoveryStore : IDisplayRecoveryStore
 {
@@ -24,14 +31,32 @@ public sealed class JsonDisplayRecoveryStore : IDisplayRecoveryStore
         WriteIndented = true,
     };
 
+    /// <summary>
+    /// How many times the completed temporary file is offered to its final name before giving up.
+    /// </summary>
+    /// <remarks>
+    /// The move can be refused for reasons that have nothing to do with this process: a virus scanner
+    /// opens a file the moment it is written, and a backup or search indexer can be holding the
+    /// destination. Those holds last milliseconds, and retrying is what turns a transient one into a
+    /// slower save rather than into a failed one.
+    /// </remarks>
+    private const int MoveAttempts = 20;
+
+    private const int MoveRetryDelayMilliseconds = 25;
+
     private readonly string _directory;
     private readonly string _path;
-    private readonly string _temporaryPath;
     private readonly TimeProvider _timeProvider;
     private readonly IAppLogger? _logger;
 
+    /// <summary>Distinguishes this store's temporary files from another store's over the same directory.</summary>
+    private readonly string _instance = Guid.NewGuid().ToString("N");
+
     /// <summary>Serializes <see cref="SaveAsync"/> and <see cref="RemoveAsync"/> against each other.</summary>
     private readonly SemaphoreSlim _writeGate = new(1, 1);
+
+    /// <summary>Makes each save's temporary file name distinct. Incremented under <see cref="_writeGate"/>.</summary>
+    private int _saves;
 
     public JsonDisplayRecoveryStore(string directory, TimeProvider timeProvider, IAppLogger? logger = null)
     {
@@ -40,7 +65,6 @@ public sealed class JsonDisplayRecoveryStore : IDisplayRecoveryStore
 
         _directory = directory;
         _path = Path.Combine(directory, FileName);
-        _temporaryPath = _path + ".tmp";
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -190,9 +214,22 @@ public sealed class JsonDisplayRecoveryStore : IDisplayRecoveryStore
 
         Directory.CreateDirectory(_directory);
 
+        // Unique per save, and not one fixed name for the store's lifetime. The write gate only
+        // serializes this instance, and the file is not private to one: a second store over the same
+        // directory - another window, a run resuming what the previous one left behind - writes the
+        // same file. Sharing one temporary name between them is a sharing violation exactly when the
+        // two saves overlap, which on the build machine is what failed the recovery tests.
+        //
+        // Both parts are needed. The instance token separates stores, which a counter cannot do
+        // because every store counts from zero; the counter separates saves within one store, which
+        // the token alone cannot do either.
+        string temporaryPath = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{_path}.{_instance}.{_saves++}.tmp");
+
         try
         {
-            await using (FileStream stream = new(_temporaryPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (FileStream stream = new(temporaryPath, FileMode.Create, FileAccess.Write, FileShare.None))
             {
                 await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -202,30 +239,65 @@ public sealed class JsonDisplayRecoveryStore : IDisplayRecoveryStore
                 stream.Flush(flushToDisk: true);
             }
 
-            File.Move(_temporaryPath, _path, overwrite: true);
+            await MoveIntoPlaceAsync(temporaryPath, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
-            // A half-written temporary file would otherwise be mistaken for a live one on the next
-            // save, which reuses this same path.
-            TryDeleteTemporaryFile();
+            // Whatever went wrong, the temporary file is not left behind: the next save uses a new
+            // name, so a survivor here would sit in the user's directory for good.
+            TryDeleteTemporaryFile(temporaryPath);
             throw;
         }
     }
 
-    private void TryDeleteTemporaryFile()
+    /// <summary>
+    /// Replaces the recovery file with the completed temporary file, retrying a refusal.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// On Windows the move is a single atomic operation in the success case, but it is refused
+    /// outright - rather than queued - if anything else holds the destination open for the moment it
+    /// is attempted. A virus scanner inspecting the file just written is the usual culprit, and the
+    /// observable symptom is a save that fails for no reason the user can act on.
+    /// </para>
+    /// <para>
+    /// Both exception types are transient here, and which one arrives depends on what is holding the
+    /// destination: a share violation is reported as <see cref="IOException"/> and a held file that
+    /// cannot be deleted as <see cref="UnauthorizedAccessException"/>. Retrying only the first would
+    /// leave the second failing exactly as before.
+    /// </para>
+    /// </remarks>
+    private async Task MoveIntoPlaceAsync(string temporaryPath, CancellationToken cancellationToken)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(temporaryPath, _path, overwrite: true);
+                return;
+            }
+            catch (Exception exception) when (
+                exception is IOException or UnauthorizedAccessException
+                && attempt < MoveAttempts)
+            {
+                await Task.Delay(MoveRetryDelayMilliseconds, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static void TryDeleteTemporaryFile(string temporaryPath)
     {
         try
         {
-            File.Delete(_temporaryPath);
+            File.Delete(temporaryPath);
         }
         catch (IOException)
         {
-            // Best effort: the next save recreates the file regardless.
+            // Best effort. It is a uniquely named file, so leaving it does not affect a later save.
         }
         catch (UnauthorizedAccessException)
         {
-            // Best effort: the next save recreates the file regardless.
+            // Best effort. It is a uniquely named file, so leaving it does not affect a later save.
         }
     }
 

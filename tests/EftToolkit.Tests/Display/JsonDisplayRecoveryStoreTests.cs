@@ -33,6 +33,18 @@ public class JsonDisplayRecoveryStoreTests : IDisposable
 
     private string RecoveryPath => Path.Combine(_directory, JsonDisplayRecoveryStore.FileName);
 
+    /// <summary>
+    /// Asserts that nothing the store wrote on its way to the real file was left behind.
+    /// </summary>
+    /// <remarks>
+    /// Listed and filtered rather than globbed. The temporary name is not one literal, and
+    /// <c>display-recovery.json.*</c> as a pattern also matches <c>display-recovery.json</c> itself,
+    /// because the trailing <c>.*</c> can match nothing at all - an assertion that reads as a check
+    /// for leftovers but passes whatever the store leaves.
+    /// </remarks>
+    private void AssertNoTemporaryFiles() =>
+        Assert.DoesNotContain(Directory.GetFiles(_directory), path => path.EndsWith(".tmp", StringComparison.Ordinal));
+
     [Fact]
     public async Task LoadAsync_returns_null_when_nothing_has_been_saved()
     {
@@ -59,7 +71,67 @@ public class JsonDisplayRecoveryStoreTests : IDisposable
         await _store.SaveAsync(Snapshot(Entry("display-1", Ramp(200))), CancellationToken.None);
 
         Assert.True(File.Exists(RecoveryPath));
-        Assert.False(File.Exists(RecoveryPath + ".tmp"));
+
+        // The temporary file is named per save rather than matching one literal, so this asks for
+        // any of them rather than for the one name the implementation happened to use.
+        AssertNoTemporaryFiles();
+    }
+
+    [Fact]
+    public async Task SaveAsync_honours_a_replaced_destination_even_when_another_holds_it_momentarily()
+    {
+        // What a virus scanner does to a file the instant it is written: opens it, and closes it
+        // again a fraction of a second later. A move attempted inside that window is refused
+        // outright rather than queued, so without a retry the save fails for no reason the user
+        // could act on - and this is the shape of the failure that reached the build.
+        TaskCompletionSource held = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task holder = Task.Run(async () =>
+        {
+            await using FileStream _ = new(RecoveryPath, FileMode.OpenOrCreate, FileAccess.Read, FileShare.Read);
+            held.SetResult();
+            await Task.Delay(150);
+        });
+
+        await held.Task;
+
+        await _store.SaveAsync(Snapshot(Entry("display-1", Ramp(200))), CancellationToken.None);
+        await holder;
+
+        DisplayRecoverySnapshot? loaded = await _store.LoadAsync(CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Single(loaded!.Displays);
+        Assert.Equal("display-1", loaded.Displays[0].StableId);
+    }
+
+    [Fact]
+    public async Task Two_stores_over_one_directory_do_not_fail_each_other()
+    {
+        // The gate serializes one instance, and that is all it can do. The module persists while a
+        // second run of the toolkit - a resumed session, a second window, a test harness standing in
+        // for the next launch - writes the same file from its own store. Sharing one temporary name
+        // between them turns that overlap into a sharing violation, which is what failed the build.
+        JsonDisplayRecoveryStore first = new(_directory, TimeProvider.System);
+        JsonDisplayRecoveryStore second = new(_directory, TimeProvider.System);
+
+        Task[] saves =
+        [
+            .. Enumerable.Range(0, 16).Select(index => Task.Run(() =>
+                first.SaveAsync(Snapshot(Entry($"first-{index}", Ramp(200))), CancellationToken.None))),
+            .. Enumerable.Range(0, 16).Select(index => Task.Run(() =>
+                second.SaveAsync(Snapshot(Entry($"second-{index}", Ramp(210))), CancellationToken.None))),
+        ];
+
+        await Task.WhenAll(saves);
+
+        // Whoever finished last, the file is one whole snapshot rather than a mixture or a wreck.
+        DisplayRecoverySnapshot? loaded = await _store.LoadAsync(CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Single(loaded!.Displays);
+        Assert.True(loaded.Displays[0].TryReadOriginalRamp(out _));
+        AssertNoTemporaryFiles();
     }
 
     [Fact]
