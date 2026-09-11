@@ -1,3 +1,4 @@
+using System.Globalization;
 using EftToolkit.Core.Display;
 using EftToolkit.Platform.Windows.Hotkeys;
 using EftToolkit.Platform.Windows.Messaging;
@@ -129,25 +130,77 @@ public class GlobalHotkeyServiceTests
 
         Assert.Equal(3, _registrar.UnregisterCount);
         Assert.Empty(_registrar.Registered);
-        Assert.True(_source.Stopped);
+
+        // The window is not touched: it is shared with the platform event source and owned by the
+        // application, so releasing the shortcuts must not close it.
+        Assert.False(_source.Stopped);
     }
 
     [Fact]
-    public async Task Unregister_releases_the_shortcuts_before_the_window_is_destroyed()
+    public async Task Unregister_releases_the_shortcuts_and_leaves_the_window_alone()
     {
-        // RegisterHotKey binds the key to the window. Destroying the window first would leave the
-        // registration attached to a handle that no longer exists.
+        // The window is shared with the platform event source and outlives the shortcuts: it carries
+        // display-change and session notifications, which have to keep arriving while the display
+        // enhancement is switched off. Tearing it down here is what used to happen, and the cost was
+        // not only the notifications — the next RegisterAsync had no window to run on, so re-enabling
+        // the display silently took no shortcuts at all.
         GlobalHotkeyService service = CreateService();
         await service.RegisterAsync(CancellationToken.None);
         await service.UnregisterAsync(CancellationToken.None);
 
         Assert.Contains("window.create", _source.Journal);
-        Assert.Contains("window.destroy", _source.Journal);
+        Assert.DoesNotContain("window.destroy", _source.Journal);
+        Assert.False(_source.Stopped);
+    }
 
-        int lastUnregister = _source.Journal.FindLastIndex(entry => entry.StartsWith("hotkey.unregister", StringComparison.Ordinal));
-        int destroy = _source.Journal.IndexOf("window.destroy");
+    [Fact]
+    public async Task Unregister_releases_every_shortcut_before_it_returns()
+    {
+        // RegisterHotKey binds the key to the window and to the thread that called it. A key left
+        // registered after the caller believes it released the shortcut is a key that keeps firing.
+        GlobalHotkeyService service = CreateService();
+        await service.RegisterAsync(CancellationToken.None);
+        await service.UnregisterAsync(CancellationToken.None);
 
-        Assert.True(lastUnregister < destroy, $"expected every unregister before window.destroy, got [{string.Join(", ", _source.Journal)}]");
+        Assert.Empty(_registrar.Registered);
+
+        foreach (DisplayPresetKind preset in WindowsMessageDecoder.Presets)
+        {
+            string id = WindowsMessageDecoder.HotkeyIdFor(preset).ToString("X", CultureInfo.InvariantCulture);
+            int registered = _registrar.Journal.FindIndex(entry => entry == $"hotkey.register.{id}");
+            int unregistered = _registrar.Journal.FindIndex(entry => entry == $"hotkey.unregister.{id}");
+
+            Assert.True(registered >= 0, $"the preset was never registered: {preset}");
+            Assert.True(unregistered > registered, $"expected the release of {preset} after its registration, got [{string.Join(", ", _registrar.Journal)}]");
+        }
+    }
+
+    [Fact]
+    public async Task Shortcuts_can_be_taken_again_after_they_are_released()
+    {
+        // Switching the display enhancement off and on again is the ordinary path through the panel,
+        // and it has to leave the shortcuts working. Each register has to reach the window rather
+        // than throwing because the previous unregister destroyed it.
+        _source.RefusesToStartAgain = true;
+
+        GlobalHotkeyService service = CreateService();
+
+        await service.RegisterAsync(CancellationToken.None);
+        await service.UnregisterAsync(CancellationToken.None);
+
+        int attemptsAfterFirst = _registrar.Attempts.Count;
+
+        await service.RegisterAsync(CancellationToken.None);
+
+        Assert.Equal(attemptsAfterFirst + 4, _registrar.Attempts.Count);
+        Assert.All(service.Registrations.Values, Assert.True);
+
+        List<DisplayPresetKind> raised = [];
+        service.PresetRequested += (_, requested) => raised.Add(requested);
+
+        _source.Deliver(WindowsMessageDecoder.WmHotkey, (nuint)WindowsMessageDecoder.HotkeyIdHigh);
+
+        Assert.Equal([DisplayPresetKind.High], raised);
     }
 
     [Fact]

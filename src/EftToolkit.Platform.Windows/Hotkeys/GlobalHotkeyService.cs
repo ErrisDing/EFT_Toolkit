@@ -75,12 +75,31 @@ public sealed class GlobalHotkeyService : IHotkeyService
                 uint virtualKey = WindowsMessageDecoder.VirtualKeyFor(preset);
                 nint window = _messageSource.WindowHandle;
 
-                // Registered on the window's own thread, which Windows requires of RegisterHotKey.
-                bool held = await _messageSource
-                    .InvokeAsync(
-                        () => _registrar.TryRegister(window, hotkeyId, WindowsMessageDecoder.ModNoRepeat, virtualKey),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                bool held;
+                try
+                {
+                    // Registered on the window's own thread, which Windows requires of RegisterHotKey.
+                    held = await _messageSource
+                        .InvokeAsync(
+                            () => _registrar.TryRegister(window, hotkeyId, WindowsMessageDecoder.ModNoRepeat, virtualKey),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    // One preset that could not be queued must not cost the user the other three.
+                    // Left to propagate, the first failure abandons the loop and the toolkit ends up
+                    // with no shortcuts at all while claiming to have registered them.
+                    SetRegistration(preset, false);
+
+                    _logger?.Write(
+                        LogLevel.Warning,
+                        "platform.hotkey.registerFailed",
+                        new Dictionary<string, object?> { ["preset"] = preset.ToString(), ["hotkeyId"] = hotkeyId },
+                        exception);
+
+                    continue;
+                }
 
                 SetRegistration(preset, held);
 
@@ -145,7 +164,14 @@ public sealed class GlobalHotkeyService : IHotkeyService
                 SetRegistration(preset, false);
             }
 
-            await _messageSource.StopAsync(cancellationToken).ConfigureAwait(false);
+            // The window is deliberately left running. It is shared with the platform event source,
+            // which has to keep receiving display-change and session-unlock notifications while the
+            // display shortcuts are off, and it is owned by the application rather than by this
+            // service - the composition root disposes it once, after everything that uses it.
+            //
+            // Stopping it here also broke every later RegisterAsync: the sink hands back the handle
+            // of the window its stop destroyed, so the four registrations failed one by one and the
+            // user was left with no shortcuts until the application was restarted.
             _registered = false;
         }
         finally
@@ -165,7 +191,8 @@ public sealed class GlobalHotkeyService : IHotkeyService
             _logger?.Write(LogLevel.Warning, "platform.hotkey.unregisterFailed", exception: exception);
         }
 
-        await _messageSource.DisposeAsync().ConfigureAwait(false);
+        // No DisposeAsync on the message source: it is not this service's to dispose, and disposing
+        // it here would take the window away from the event source still holding it.
     }
 
     private void OnMessageReceived(object? sender, WindowsMessage message)

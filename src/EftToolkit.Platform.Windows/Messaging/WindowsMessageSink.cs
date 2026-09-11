@@ -35,7 +35,13 @@ public sealed class WindowsMessageSink : IWindowsMessageSource
     private readonly NativeMethods.WindowProcedure _windowProcedure;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly TaskCompletionSource<nint> _windowReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    // Replaced on every start, not created once. A completion source is single-use, so a sink that
+    // was stopped and started again would await the completed one and be handed the handle of the
+    // window the stop had already destroyed - after which every queued callback failed. Nothing in
+    // the application stops the sink any more, but a sink that cannot be restarted is a trap for
+    // whatever calls StopAsync next.
+    private TaskCompletionSource<nint> _windowReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private Thread? _thread;
     private nint _instance;
@@ -92,6 +98,11 @@ public sealed class WindowsMessageSink : IWindowsMessageSource
             {
                 return;
             }
+
+            // Before the thread starts, so the message loop cannot publish its window into the
+            // previous run's completion source. StopAsync joins the thread before it returns, so no
+            // earlier loop is still alive to overwrite this one.
+            _windowReady = new TaskCompletionSource<nint>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             _thread = new Thread(RunMessageLoop)
             {

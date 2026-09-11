@@ -16,16 +16,43 @@ internal sealed class FakeWindowsMessageSource : IWindowsMessageSource
 
     public bool Stopped { get; private set; }
 
+    /// <summary>
+    /// Stands in for the real sink's inability to come back after it has been stopped. The real one
+    /// publishes the window handle through a completion source that is never replaced, so a second
+    /// start hands back the handle of the window the first stop destroyed and every queued callback
+    /// then fails to find a window to run on.
+    /// </summary>
+    /// <remarks>
+    /// Set by a test that wants the window to behave like the real one. Without it the fake would
+    /// restart happily and hide exactly the failure that makes this fake worth having.
+    /// </remarks>
+    public bool RefusesToStartAgain { get; set; }
+
     public nint WindowHandle => 0x1234;
 
     public event EventHandler<WindowsMessage>? MessageReceived;
 
-    public Task<T> InvokeAsync<T>(Func<T> callback, CancellationToken cancellationToken) =>
-        Task.FromResult(callback());
+    public Task<T> InvokeAsync<T>(Func<T> callback, CancellationToken cancellationToken)
+    {
+        if (Stopped)
+        {
+            throw new InvalidOperationException("The callback could not be queued to the message window's thread.");
+        }
+
+        return Task.FromResult(callback());
+    }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        // Deliberately ignored rather than throwing: the real sink does not fail a restart either,
+        // it claims success and leaves the caller with a handle to a window that no longer exists.
+        if (Stopped && RefusesToStartAgain)
+        {
+            return Task.CompletedTask;
+        }
+
         Started = true;
+        Stopped = false;
         Journal.Add("window.create");
         return Task.CompletedTask;
     }
