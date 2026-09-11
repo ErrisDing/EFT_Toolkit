@@ -3,6 +3,8 @@
   <PropertyGroup>
     <RootNamespace>EftToolkit.Display</RootNamespace>
     <AssemblyName>EftToolkit.Display</AssemblyName>
+    <!-- The DisplayConfig structures declare fixed-size character buffers, and [LibraryImport] emits unsafe stubs. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
