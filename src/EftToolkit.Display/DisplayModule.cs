@@ -702,6 +702,34 @@ public sealed class DisplayModule : IDisplayController
                     succeeded++;
                     SetLastWrittenFingerprint(row.Display.StableId, GammaRampFingerprint.Compute(ramp));
                     fingerprintChanged = true;
+
+                    // Every applied preset is recorded, not only the failures. A shortcut that is
+                    // captured and applied leaves no other trace, so without this line "the key did
+                    // nothing" and "the key was never pressed" are the same log - and on a display
+                    // that accepts the write and ignores it, the failure is reported as a success.
+                    _logger?.Write(
+                        LogLevel.Information,
+                        "display.preset.applied",
+                        new Dictionary<string, object?>
+                        {
+                            ["displayId"] = row.Display.StableId,
+                            ["preset"] = preset.ToString(),
+                        });
+                }
+                else
+                {
+                    // A refusal that did not throw: the display rejected the ramp while the call
+                    // itself was fine. Reported per display rather than only when every one of them
+                    // failed, because a single rejected monitor looks exactly like a dead shortcut.
+                    _logger?.Write(
+                        LogLevel.Warning,
+                        "display.preset.writeRefused",
+                        new Dictionary<string, object?>
+                        {
+                            ["displayId"] = row.Display.StableId,
+                            ["preset"] = preset.ToString(),
+                            ["message"] = result.Message,
+                        });
                 }
 
                 updated.Add(row with { Preset = preset, LastResult = result, Message = result.Message });
