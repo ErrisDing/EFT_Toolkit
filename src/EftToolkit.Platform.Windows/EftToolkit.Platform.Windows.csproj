@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>EftToolkit.Platform.Windows</RootNamespace>
+    <AssemblyName>EftToolkit.Platform.Windows</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EftToolkit.Core\EftToolkit.Core.csproj" />
+  </ItemGroup>
+
+</Project>

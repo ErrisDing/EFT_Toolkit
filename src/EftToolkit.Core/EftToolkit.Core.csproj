@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>EftToolkit.Core</RootNamespace>
+    <AssemblyName>EftToolkit.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>

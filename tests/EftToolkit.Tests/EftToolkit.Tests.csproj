@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>EftToolkit.Tests</RootNamespace>
+    <AssemblyName>EftToolkit.Tests</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <!-- The App project under test is a WPF WinExe, so the test host needs the desktop framework reference. -->
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EftToolkit.Core\EftToolkit.Core.csproj" />
+    <ProjectReference Include="..\..\src\EftToolkit.Display\EftToolkit.Display.csproj" />
+    <ProjectReference Include="..\..\src\EftToolkit.Audio\EftToolkit.Audio.csproj" />
+    <ProjectReference Include="..\..\src\EftToolkit.Platform.Windows\EftToolkit.Platform.Windows.csproj" />
+    <ProjectReference Include="..\..\src\EftToolkit.App\EftToolkit.App.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <!-- VSTest adapter: xunit.v3 4.0.0 is Microsoft.Testing.Platform based, so dotnet test needs this to discover tests. -->
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{5B14E3C9-4438-47A1-88B7-45BAB67AA2FA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EftToolkit.Core", "src\EftToolkit.Core\EftToolkit.Core.csproj", "{6173F6BF-403F-4219-B911-234037B56B7A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EftToolkit.Display", "src\EftToolkit.Display\EftToolkit.Display.csproj", "{8F56AF30-C07F-44FD-9F27-E1698A6B662D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EftToolkit.Audio", "src\EftToolkit.Audio\EftToolkit.Audio.csproj", "{2D3621E2-7889-495E-8162-0B8B41B9EE18}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EftToolkit.Platform.Windows", "src\EftToolkit.Platform.Windows\EftToolkit.Platform.Windows.csproj", "{4F72285C-B6C5-4C65-8CC9-26D1CAB79CC0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EftToolkit.App", "src\EftToolkit.App\EftToolkit.App.csproj", "{B01098E9-3531-4A88-8801-46732D564786}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{2A937AED-0F06-4315-B1DD-493CE9D1FDFA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EftToolkit.Tests", "tests\EftToolkit.Tests\EftToolkit.Tests.csproj", "{5DA6602A-9425-4338-B3AA-70766545A4FB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6173F6BF-403F-4219-B911-234037B56B7A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6173F6BF-403F-4219-B911-234037B56B7A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6173F6BF-403F-4219-B911-234037B56B7A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6173F6BF-403F-4219-B911-234037B56B7A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8F56AF30-C07F-44FD-9F27-E1698A6B662D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8F56AF30-C07F-44FD-9F27-E1698A6B662D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8F56AF30-C07F-44FD-9F27-E1698A6B662D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8F56AF30-C07F-44FD-9F27-E1698A6B662D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D3621E2-7889-495E-8162-0B8B41B9EE18}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D3621E2-7889-495E-8162-0B8B41B9EE18}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D3621E2-7889-495E-8162-0B8B41B9EE18}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D3621E2-7889-495E-8162-0B8B41B9EE18}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4F72285C-B6C5-4C65-8CC9-26D1CAB79CC0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F72285C-B6C5-4C65-8CC9-26D1CAB79CC0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F72285C-B6C5-4C65-8CC9-26D1CAB79CC0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F72285C-B6C5-4C65-8CC9-26D1CAB79CC0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B01098E9-3531-4A88-8801-46732D564786}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B01098E9-3531-4A88-8801-46732D564786}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B01098E9-3531-4A88-8801-46732D564786}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B01098E9-3531-4A88-8801-46732D564786}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5DA6602A-9425-4338-B3AA-70766545A4FB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5DA6602A-9425-4338-B3AA-70766545A4FB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5DA6602A-9425-4338-B3AA-70766545A4FB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5DA6602A-9425-4338-B3AA-70766545A4FB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{6173F6BF-403F-4219-B911-234037B56B7A} = {5B14E3C9-4438-47A1-88B7-45BAB67AA2FA}
+		{8F56AF30-C07F-44FD-9F27-E1698A6B662D} = {5B14E3C9-4438-47A1-88B7-45BAB67AA2FA}
+		{2D3621E2-7889-495E-8162-0B8B41B9EE18} = {5B14E3C9-4438-47A1-88B7-45BAB67AA2FA}
+		{4F72285C-B6C5-4C65-8CC9-26D1CAB79CC0} = {5B14E3C9-4438-47A1-88B7-45BAB67AA2FA}
+		{B01098E9-3531-4A88-8801-46732D564786} = {5B14E3C9-4438-47A1-88B7-45BAB67AA2FA}
+		{5DA6602A-9425-4338-B3AA-70766545A4FB} = {2A937AED-0F06-4315-B1DD-493CE9D1FDFA}
+	EndGlobalSection
+EndGlobal

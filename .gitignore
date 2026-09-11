@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# Test output
+TestResults/
+*.trx
+
+# Publish output
+publish/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+desktop.ini
