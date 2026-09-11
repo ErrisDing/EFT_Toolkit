@@ -8,6 +8,13 @@
     <IsPackable>false</IsPackable>
     <!-- The App project under test is a WPF WinExe, so the test host needs the desktop framework reference. -->
     <UseWPF>true</UseWPF>
+    <!--
+      xUnit1051 wants TestContext.Current.CancellationToken threaded through every call that accepts
+      one. These tests exercise in-memory and temp-file paths that complete in milliseconds, and the
+      lifecycle contracts under test are specified in terms of explicit CancellationToken.None, so
+      the rule adds noise without adding cancellation responsiveness.
+    -->
+    <NoWarn>$(NoWarn);xUnit1051</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,6 +33,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- UseWPF replaces the default implicit-using set, which drops System.IO and System.Net.Http. -->
+    <Using Include="System.IO" />
     <Using Include="Xunit" />
   </ItemGroup>
 
