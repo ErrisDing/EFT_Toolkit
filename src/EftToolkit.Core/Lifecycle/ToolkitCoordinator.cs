@@ -213,6 +213,90 @@ public sealed class ToolkitCoordinator : IAsyncDisposable
     }
 
     /// <summary>
+    /// Applies an edit to the configuration, stores it, and makes as much of it take effect now as
+    /// can take effect without restarting the application.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The edit is validated before anything is done with it, and the stored file is written before
+    /// the running application is told, so a write that failed leaves neither half changed.
+    /// </para>
+    /// <para>
+    /// The two modules receive an edit differently, and the difference is theirs rather than this
+    /// method's. The display module holds the copy it was built with, so the edit is handed to it.
+    /// The audio module reads the store every time it evaluates a route, so the written file is what
+    /// tells it, and a change to the limiter or the endpoints takes effect at its next transition.
+    /// </para>
+    /// <para>
+    /// Editing whether a module is switched on is not done here: switching one on or off is a
+    /// transition, and <see cref="SetDisplayEnabledAsync"/> and <see cref="SetAudioEnabledAsync"/>
+    /// are where transitions live.
+    /// </para>
+    /// </remarks>
+    public async Task UpdateOptionsAsync(
+        Func<ToolkitOptions, ToolkitOptions> edit,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfShuttingDown();
+
+            ToolkitOptions current = _options;
+            ToolkitOptions edited = OptionsValidator.Validate(edit(current));
+
+            if (edited.Display.Enabled != current.Display.Enabled
+                || edited.Audio.Enabled != current.Audio.Enabled)
+            {
+                throw new ArgumentException(
+                    "Switching a module on or off is a transition, not an edit.",
+                    nameof(edit));
+            }
+
+            bool selectionChanged = !Sequence.Equal(
+                edited.Display.SelectedDisplayIds,
+                current.Display.SelectedDisplayIds);
+
+            bool valuesChanged = edited.Display.Low != current.Display.Low
+                || edited.Display.Medium != current.Display.Medium
+                || edited.Display.High != current.Display.High;
+
+            _display.UpdateOptions(edited.Display);
+
+            await SaveOptionsAsync(edited, cancellationToken).ConfigureAwait(false);
+
+            if (!_displayEnabled)
+            {
+                // Nothing is on the displays, so there is nothing to redo. The next enable picks the
+                // edit up, because the module now holds it.
+                return;
+            }
+
+            if (selectionChanged)
+            {
+                // Re-enumerating is what makes a newly ticked monitor real — it gets a row of its
+                // own, its original is captured, and the preset in force is applied to it — and what
+                // puts back the ramp of one that was unticked.
+                await _display.RefreshAndReapplyAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (valuesChanged)
+            {
+                // No enumeration needed: the user is looking at a preset and the values it composes
+                // from have changed, so the same preset is written again with them.
+                await _display
+                    .ApplyPresetAsync(_display.CurrentPreset, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
     /// Tears the toolkit down in the documented order, once, and returns what happened.
     /// </summary>
     /// <remarks>

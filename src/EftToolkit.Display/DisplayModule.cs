@@ -24,7 +24,12 @@ namespace EftToolkit.Display;
 /// </remarks>
 public sealed class DisplayModule : IDisplayController
 {
-    private readonly DisplayOptions _options;
+    /// <summary>
+    /// Not readonly: the panel's edits are adopted through <see cref="UpdateOptions"/>. Volatile, so
+    /// a worker thread composing a preset reads the values the user last approved rather than a
+    /// cached copy.
+    /// </summary>
+    private volatile DisplayOptions _options;
     private readonly IDisplayGammaGateway _gateway;
     private readonly IDisplayRecoveryStore _recoveryStore;
     private readonly IAppLogger? _logger;
@@ -186,6 +191,18 @@ public sealed class DisplayModule : IDisplayController
         }
     }
 
+    public void UpdateOptions(DisplayOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        _options = options;
+
+        _logger?.Write(
+            LogLevel.Information,
+            "display.options.updated",
+            new Dictionary<string, object?> { ["selected"] = options.SelectedDisplayIds.Count });
+    }
+
     public async Task ApplyPresetAsync(DisplayPresetKind preset, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
@@ -227,6 +244,10 @@ public sealed class DisplayModule : IDisplayController
                 .ConfigureAwait(false);
 
             SetDisplays(await CaptureAsync(displays, cancellationToken).ConfigureAwait(false));
+
+            // Before the recovery file is rewritten, so a display put back here is also gone from the
+            // record of what still needs restoring.
+            await RestoreDeselectedAsync(cancellationToken).ConfigureAwait(false);
 
             // Displays that reconnected keep the original captured when the module was enabled.
             // Re-reading now would capture whatever the toolkit itself last wrote, which would then
@@ -457,6 +478,77 @@ public sealed class DisplayModule : IDisplayController
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// Puts back the original ramp of any display that has been dropped from the selection.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Unticking a monitor is the user asking for it to stop being enhanced, so a row that is no
+    /// longer selected must not be left holding the ramp this toolkit wrote. Nothing else would ever
+    /// put it back: the disable path only runs when the whole module is switched off, and applying a
+    /// preset skips what is not selected.
+    /// </para>
+    /// <para>
+    /// This runs on every refresh, and a refresh is also what a Windows display change triggers.
+    /// There is nothing to do in that case: only selected displays are ever captured, so a row that
+    /// is not selected has no captured ramp to put back.
+    /// </para>
+    /// <para>
+    /// A display that is not connected right now keeps its entry. It is still deselected, and the
+    /// restore it is owed is owed to it whenever it comes back.
+    /// </para>
+    /// </remarks>
+    private async Task RestoreDeselectedAsync(CancellationToken cancellationToken)
+    {
+        foreach ((string stableId, GammaRamp original, _) in SnapshotCaptures())
+        {
+            DisplayStatus? row = Displays.FirstOrDefault(
+                item => string.Equals(item.Display.StableId, stableId, StringComparison.Ordinal));
+
+            if (row is null || row.Selected || !row.Display.IsConnected)
+            {
+                continue;
+            }
+
+            try
+            {
+                GammaWriteResult result = await _gateway
+                    .WriteAsync(row.Display, original, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (!result.Succeeded)
+                {
+                    // The entry stays, so the next refresh tries again.
+                    _logger?.Write(
+                        LogLevel.Warning,
+                        "display.deselect.restoreFailed",
+                        new Dictionary<string, object?>
+                        {
+                            ["displayId"] = stableId,
+                            ["message"] = result.Message,
+                        });
+
+                    continue;
+                }
+
+                RemoveOriginal(stableId);
+
+                _logger?.Write(
+                    LogLevel.Information,
+                    "display.deselect.restored",
+                    new Dictionary<string, object?> { ["displayId"] = stableId });
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                _logger?.Write(
+                    LogLevel.Warning,
+                    "display.deselect.restoreFailed",
+                    new Dictionary<string, object?> { ["displayId"] = stableId },
+                    exception);
+            }
+        }
     }
 
     private async Task<HashSet<string>> RestoreOriginalsAsync(CancellationToken cancellationToken)

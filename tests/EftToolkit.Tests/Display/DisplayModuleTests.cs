@@ -286,6 +286,96 @@ public class DisplayModuleTests : IDisposable
         Assert.Equal(Original, captured);
     }
 
+    // ---------------------------------------------------------------- edited configuration
+
+    [Fact]
+    public async Task Updating_options_changes_what_the_next_preset_composes_from()
+    {
+        FakeDisplayGammaGateway gateway = FakeDisplayGammaGateway.OneDisplay(Original);
+        DisplayPresetOptions brighter = new(Gamma: 1.95, ShadowLift: 0.03, OutputCeiling: 0.9);
+
+        await using DisplayModule module = CreateModule(gateway);
+        await module.EnableAsync(CancellationToken.None);
+
+        // The module holds the copy it was built with, so adopting the edit is the only way the value
+        // the user just typed can reach a display.
+        module.UpdateOptions(DefaultOptions with { High = brighter });
+
+        await module.ApplyPresetAsync(DisplayPresetKind.High, CancellationToken.None);
+        await WaitUntilAsync(() => gateway.WriteLog.Count >= 1, "the high preset was never written");
+
+        Assert.Equal(GammaRampComposer.Compose(Original, brighter), gateway.LastWrittenRamp);
+    }
+
+    [Fact]
+    public async Task RefreshAndReapply_puts_back_the_ramp_of_a_display_that_left_the_selection()
+    {
+        FakeDisplayGammaGateway gateway = new();
+        gateway.AddDisplay("display-1", "One", Original);
+        gateway.AddDisplay("display-2", "Two", Second);
+
+        await using DisplayModule module = CreateModule(gateway, "display-1", "display-2");
+        await module.EnableAsync(CancellationToken.None);
+
+        await module.ApplyPresetAsync(DisplayPresetKind.High, CancellationToken.None);
+        await WaitUntilAsync(
+            () => gateway.WriteCountByDisplay.GetValueOrDefault("display-2") == 1,
+            "both displays were never enhanced");
+
+        module.UpdateOptions(DefaultOptions with { SelectedDisplayIds = ["display-1"] });
+
+        int writesBefore = gateway.WriteLog.Count;
+
+        await module.RefreshAndReapplyAsync(CancellationToken.None);
+
+        // Unticking a monitor is the user asking for it to stop being enhanced. It would keep the
+        // preset for the rest of the session otherwise: nothing else puts it back while the module is
+        // still on its way to being switched off.
+        Assert.Equal(Second, gateway.CurrentRamp("display-2"));
+        Assert.Equal(GammaRampComposer.Compose(Original, DefaultOptions.High), gateway.CurrentRamp("display-1"));
+
+        // One write to put the ramp of display-2 back, one to reapply the preset to display-1.
+        Assert.Equal(writesBefore + 2, gateway.WriteLog.Count);
+
+        // The display that was put back is no longer owed a restore.
+        DisplayRecoverySnapshot? snapshot = await _store.LoadAsync(CancellationToken.None);
+        Assert.Equal("display-1", Assert.Single(snapshot!.Displays).StableId);
+
+        await module.DisableAsync(CancellationToken.None);
+
+        // Disable has nothing left to do for the monitor that left the selection, so the ramp it
+        // already had back is not written to it a second time.
+        Assert.Equal(Second, gateway.CurrentRamp("display-2"));
+        Assert.Equal(2, gateway.WriteCountByDisplay["display-2"]);
+        Assert.Equal(3, gateway.WriteCountByDisplay["display-1"]);
+    }
+
+    [Fact]
+    public async Task A_deselected_display_keeps_its_recovery_entry_when_the_restore_is_refused()
+    {
+        FakeDisplayGammaGateway gateway = new();
+        gateway.AddDisplay("display-1", "One", Original);
+        gateway.AddDisplay("display-2", "Two", Second);
+
+        await using DisplayModule module = CreateModule(gateway, "display-1", "display-2");
+        await module.EnableAsync(CancellationToken.None);
+
+        await module.ApplyPresetAsync(DisplayPresetKind.High, CancellationToken.None);
+        await WaitUntilAsync(
+            () => gateway.WriteCountByDisplay.GetValueOrDefault("display-2") == 1,
+            "both displays were never enhanced");
+
+        gateway.FailOnWrite.Add("display-2");
+        module.UpdateOptions(DefaultOptions with { SelectedDisplayIds = ["display-1"] });
+
+        await module.RefreshAndReapplyAsync(CancellationToken.None);
+
+        // Still enhanced, so the entry has to survive for the next launch to retry: dropping it would
+        // leave the preset on the display with nothing anywhere recording what it replaced.
+        DisplayRecoverySnapshot? snapshot = await _store.LoadAsync(CancellationToken.None);
+        Assert.Equal(2, snapshot!.Displays.Count);
+    }
+
     // ---------------------------------------------------------------- disable
 
     [Fact]

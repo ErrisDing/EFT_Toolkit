@@ -327,6 +327,151 @@ public class ToolkitCoordinatorTests
         Assert.Equal(0, _display.EnableCount);
     }
 
+    // ---------------------------------------------------------------- editing
+
+    [Fact]
+    public async Task An_edit_is_validated_adopted_and_stored()
+    {
+        await using ToolkitCoordinator coordinator = CreateCoordinator();
+        await coordinator.StartAsync(CancellationToken.None);
+
+        await coordinator.UpdateOptionsAsync(
+            options => options with
+            {
+                Display = options.Display with
+                {
+                    Low = new DisplayPresetOptions(Gamma: 1.8, ShadowLift: 0.05, OutputCeiling: 0.9),
+                },
+            },
+            CancellationToken.None);
+
+        // The module holds the copy it was built with, so an edit that is only stored would be an
+        // edit the running application never sees.
+        Assert.Equal(1.8, _display.Adopted!.Low.Gamma);
+        Assert.Equal(1.8, _store.LastSaved!.Display.Low.Gamma);
+        Assert.Equal(1.8, coordinator.Options.Display.Low.Gamma);
+    }
+
+    [Fact]
+    public async Task An_edit_outside_the_approved_ranges_is_replaced_with_the_approved_default()
+    {
+        await using ToolkitCoordinator coordinator = CreateCoordinator();
+        await coordinator.StartAsync(CancellationToken.None);
+
+        await coordinator.UpdateOptionsAsync(
+            options => options with
+            {
+                Display = options.Display with
+                {
+                    High = new DisplayPresetOptions(Gamma: 12.0, ShadowLift: 0.0, OutputCeiling: 1.0),
+                },
+            },
+            CancellationToken.None);
+
+        // The panel refuses an out-of-range value at the field the user typed it into. This is the
+        // second line of defence, and it is here because a gamma of 12 is a dark screen rather than
+        // a brighter one: neither the module nor the file is allowed to end up holding it.
+        Assert.Equal(1.55, _display.Adopted!.High.Gamma);
+        Assert.Equal(1.55, _store.LastSaved!.Display.High.Gamma);
+        Assert.Equal(1.55, coordinator.Options.Display.High.Gamma);
+    }
+
+    [Fact]
+    public async Task Changing_the_selection_re_enumerates_while_the_display_is_on()
+    {
+        _store.Stored = WithDisplay(enabled: true);
+
+        await using ToolkitCoordinator coordinator = CreateCoordinator();
+        await coordinator.StartAsync(CancellationToken.None);
+
+        await coordinator.UpdateOptionsAsync(
+            options => options with
+            {
+                Display = options.Display with { SelectedDisplayIds = ["monitor-a", "monitor-b"] },
+            },
+            CancellationToken.None);
+
+        // A newly ticked monitor only exists as a row once the module enumerates again, and that is
+        // also what captures its original ramp before anything is written to it.
+        Assert.Equal(1, _display.RefreshCount);
+        Assert.Equal(["monitor-a", "monitor-b"], _display.Adopted!.SelectedDisplayIds);
+    }
+
+    [Fact]
+    public async Task Changing_a_preset_value_rewrites_the_preset_in_force()
+    {
+        _store.Stored = WithDisplay(enabled: true);
+        _display.CurrentPreset = DisplayPresetKind.High;
+
+        await using ToolkitCoordinator coordinator = CreateCoordinator();
+        await coordinator.StartAsync(CancellationToken.None);
+
+        await coordinator.UpdateOptionsAsync(
+            options => options with
+            {
+                Display = options.Display with
+                {
+                    High = new DisplayPresetOptions(Gamma: 1.9, ShadowLift: 0.02, OutputCeiling: 1.0),
+                },
+            },
+            CancellationToken.None);
+
+        // The user is looking at a preset, so the values it composes from changing has to change what
+        // is on the screen — and no re-enumeration is needed to do it.
+        Assert.Equal(0, _display.RefreshCount);
+        Assert.Equal(DisplayPresetKind.High, _display.LastPreset);
+    }
+
+    [Fact]
+    public async Task An_edit_while_display_is_off_is_stored_and_nothing_is_written()
+    {
+        await using ToolkitCoordinator coordinator = CreateCoordinator();
+        await coordinator.StartAsync(CancellationToken.None);
+
+        await coordinator.UpdateOptionsAsync(
+            options => options with
+            {
+                Display = options.Display with { SelectedDisplayIds = ["monitor-a"] },
+            },
+            CancellationToken.None);
+
+        // Nothing is on the displays, so there is nothing to redo. What was stored is what the next
+        // enable acts on, and the module already holds it.
+        Assert.Equal(0, _display.RefreshCount);
+        Assert.Equal(0, _display.ApplyCount);
+        Assert.Equal(["monitor-a"], _store.LastSaved!.Display.SelectedDisplayIds);
+    }
+
+    [Fact]
+    public async Task An_edit_never_switches_a_module_on_or_off()
+    {
+        await using ToolkitCoordinator coordinator = CreateCoordinator();
+        await coordinator.StartAsync(CancellationToken.None);
+
+        // Switching a module on is a transition that registers shortcuts and opens a WASAPI stream.
+        // An edit that arrived here with a different flag would otherwise change the file and leave
+        // the running application disagreeing with it.
+        await Assert.ThrowsAsync<ArgumentException>(() => coordinator.UpdateOptionsAsync(
+            options => options with { Display = options.Display with { Enabled = true } },
+            CancellationToken.None));
+
+        Assert.False(coordinator.IsDisplayEnabled);
+        Assert.Null(_store.LastSaved);
+    }
+
+    [Fact]
+    public async Task An_edit_after_shutdown_started_is_refused()
+    {
+        await using ToolkitCoordinator coordinator = CreateCoordinator(shutdownTimeout: ShortDeadline);
+        await coordinator.StartAsync(CancellationToken.None);
+
+        await coordinator.ShutdownAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.UpdateOptionsAsync(
+            options => options,
+            CancellationToken.None));
+    }
+
     // ---------------------------------------------------------------- events
 
     [Fact]
@@ -671,6 +816,12 @@ public class ToolkitCoordinatorTests
 
         public bool ApplyCompleted { get; private set; }
 
+        /// <summary>The module's own preset, which the coordinator asks for when it reapplies.</summary>
+        public DisplayPresetKind CurrentPreset { get; set; } = DisplayPresetKind.Medium;
+
+        /// <summary>The last configuration handed over through <see cref="UpdateOptions"/>.</summary>
+        public DisplayOptions? Adopted { get; private set; }
+
         public Exception? EnableFailure { get; set; }
 
         public Exception? DisableFailure { get; set; }
@@ -746,6 +897,12 @@ public class ToolkitCoordinatorTests
 
                 LastPreset = preset;
             }
+        }
+
+        public void UpdateOptions(DisplayOptions options)
+        {
+            Adopted = options;
+            journal.Add("display.options");
         }
 
         public Task RefreshAndReapplyAsync(CancellationToken cancellationToken)
