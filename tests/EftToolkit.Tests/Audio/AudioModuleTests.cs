@@ -538,7 +538,13 @@ public class AudioModuleTests
 
         _monitor.Running = true;
         _monitor.RaiseChanged();
-        await AsyncWait.UntilAsync(() => _sessions.Count == 1, "the game was noticed");
+
+        // The wait is for what is asserted rather than for the session alone: the stream is created
+        // and started before the status that describes it is published, so a wait on the session
+        // count can return while the module is still reporting the state it was in before.
+        await AsyncWait.UntilAsync(
+            () => _sessions.Count == 1 && module.Status.State == ModuleState.Bypass,
+            "the game was noticed and the remembered bypass was applied to the new stream");
 
         Assert.True(_sessions[0].Bypass);
         Assert.Equal(ModuleState.Bypass, module.Status.State);
@@ -558,7 +564,11 @@ public class AudioModuleTests
 
         _monitor.Running = true;
         _monitor.RaiseChanged();
-        await AsyncWait.UntilAsync(() => _sessions.Count == 2, "the game came back");
+
+        // As above: the reopened stream exists before the state that describes it does.
+        await AsyncWait.UntilAsync(
+            () => _sessions.Count == 2 && module.Status.State == ModuleState.Bypass,
+            "the game came back and the bypass was applied to the reopened stream");
 
         Assert.True(_sessions[1].Bypass);
         Assert.Equal(ModuleState.Bypass, module.Status.State);
