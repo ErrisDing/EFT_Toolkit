@@ -36,8 +36,68 @@ jobs:
       # The hardware category is the tests that need a real display or a real audio endpoint. They are
       # skipped rather than faked, and they are not part of the release gate; the manual checklist is
       # what covers what they would have covered.
+      #
+      # The result file is written whatever the outcome and uploaded below, because a failing run that
+      # says only "exit code 1" cannot be acted on: the failing test's name and message are the whole
+      # of the diagnosis, and the raw log needs repository admin rights to read.
       - name: Test
-        run: dotnet test EftToolkit.sln --configuration Release --no-build --filter 'Category!=Hardware'
+        id: test
+        continue-on-error: true
+        run: dotnet test EftToolkit.sln --configuration Release --no-build --filter 'Category!=Hardware' --logger "trx;LogFileName=test-results.trx" --results-directory artifacts/test-results
+
+      - name: Upload the test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: artifacts/test-results/
+          if-no-files-found: warn
+
+      # Written to the job summary as well as uploaded, so the names are readable in the run page
+      # itself. The artifact needs a download to say anything, and the log needs rights a contributor
+      # does not have - neither is much use while standing in front of a red run.
+      - name: Summarise the test results
+        if: always()
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem artifacts/test-results -Filter '*.trx' -ErrorAction SilentlyContinue
+
+          if (-not $files) {
+            Add-Content $env:GITHUB_STEP_SUMMARY 'No test result file was produced.'
+            exit 0
+          }
+
+          $results = $files | ForEach-Object { [xml](Get-Content $_.FullName) }
+          $lines = @()
+
+          foreach ($result in $results) {
+            $counters = $result.TestRun.ResultSummary.Counters
+            $lines += "Passed $($counters.passed), failed $($counters.failed), skipped $($counters.notExecuted), total $($counters.total)."
+            $lines += ''
+
+            $failed = $result.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -eq 'Failed' }
+
+            foreach ($test in $failed) {
+              $lines += "FAILED  $($test.testName)"
+              $message = $test.Output.ErrorInfo.Message
+              $stack = $test.Output.ErrorInfo.StackTrace
+
+              if ($message) { $lines += "        $message" }
+              if ($stack) { $lines += "        $($stack -split "`n" | Select-Object -First 4)" }
+
+              $lines += ''
+            }
+          }
+
+          $lines | Add-Content $env:GITHUB_STEP_SUMMARY
+          Write-Host ($lines -join "`n")
+
+      - name: Fail if the tests failed
+        if: steps.test.outcome != 'success'
+        shell: pwsh
+        run: |
+          Write-Host 'The test step failed; the names and messages are on the test-results artifact and in the job summary.'
+          exit 1
 
       - name: Publish
         run: pwsh -File scripts/publish.ps1
