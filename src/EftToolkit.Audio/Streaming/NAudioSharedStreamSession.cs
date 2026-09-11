@@ -50,12 +50,6 @@ public sealed class NAudioSharedStreamSession : IAudioStreamSession
     /// </remarks>
     public const int CaptureBufferMilliseconds = 20;
 
-    /// <summary>
-    /// Rates the toolkit will stream at. Anything else is refused rather than resampled to, because
-    /// the whole point of the route is that the game's audio arrives unaltered.
-    /// </summary>
-    private static readonly int[] SupportedSampleRates = [44_100, 48_000];
-
     /// <summary>Media Foundation resampler quality, 1 to 60.</summary>
     private const int ResamplerQualitySetting = 60;
 
@@ -569,10 +563,13 @@ public sealed class NAudioSharedStreamSession : IAudioStreamSession
                 nameof(format));
         }
 
-        if (Array.IndexOf(SupportedSampleRates, format.SampleRate) < 0)
+        // The same set the panel validates against, so a rate offered there is one this session
+        // opens. A second copy of the list here is a rate the user can select and never enable.
+        if (!AudioRouteValidator.SupportedSampleRates.Contains(format.SampleRate))
         {
             throw new NotSupportedException(
-                $"The {side} endpoint runs at {format.SampleRate} Hz; only 44100 and 48000 are streamed.");
+                $"The {side} endpoint runs at {format.SampleRate} Hz; "
+                + $"only {AudioRouteValidator.SupportedSampleRateList} are streamed.");
         }
 
         return format.SampleRate;

@@ -940,7 +940,7 @@ public sealed class AudioModule : IAudioController
                 $"The virtual output and the playback endpoint for '{name}' are the same device, which would loop.",
 
             AudioRouteErrorCodes.UnsupportedChannelCount or AudioRouteErrorCodes.UnsupportedSampleRate =>
-                $"An endpoint for '{name}' is not a stereo format at 44.1 or 48 kHz, which is what this release carries.",
+                $"An endpoint for '{name}' is not a stereo format at one of {AudioRouteValidator.SupportedSampleRateList} Hz, which is what this release carries.",
 
             AudioRouteErrorCodes.WrongDataFlow =>
                 $"One of the endpoints for '{name}' is the wrong kind: a playback endpoint was chosen where a recording endpoint is needed, or the reverse. The toolkit does not install or configure the virtual cable.",
@@ -963,7 +963,7 @@ public sealed class AudioModule : IAudioController
     private static string DescribeOpenFailureMessage(Exception exception) => exception switch
     {
         ArgumentException or NotSupportedException =>
-            "An endpoint's format changed to one the toolkit does not carry. Set it to a stereo 44.1 or 48 kHz format.",
+            $"An endpoint's format changed to one the toolkit does not carry. Set it to a stereo {AudioRouteValidator.SupportedSampleRateList} Hz format.",
 
         _ =>
             "The audio endpoints could not be opened in shared mode. Another application may be holding them, or the device may have been removed.",

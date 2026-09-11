@@ -27,7 +27,9 @@ public interface IAudioStreamSession : IAsyncDisposable
     /// </summary>
     /// <exception cref="InvalidOperationException">The session is already running.</exception>
     /// <exception cref="ArgumentException">An endpoint's format is not stereo.</exception>
-    /// <exception cref="NotSupportedException">An endpoint's sample rate is not 44.1 or 48 kHz.</exception>
+    /// <exception cref="NotSupportedException">
+    /// An endpoint's sample rate is not one of <see cref="Routing.AudioRouteValidator.SupportedSampleRates"/>.
+    /// </exception>
     Task StartAsync(AudioRoute route, AudioLimiterOptions limiter, CancellationToken cancellationToken);
 
     /// <summary>

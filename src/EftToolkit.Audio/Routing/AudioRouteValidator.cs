@@ -19,11 +19,21 @@ public static class AudioRouteValidator
     public const int StereoChannelCount = 2;
 
     /// <summary>
-    /// The rates the first release supports. Both are rates the cable and the game agree on; the
-    /// rest are refused rather than resampled, because a rate conversion in this path would add a
+    /// The rates the toolkit streams. All three are rates the cable and a game agree on; the rest
+    /// are refused rather than resampled, because a rate conversion in this path would add a
     /// latency the user would feel and could not account for.
     /// </summary>
-    public static readonly IReadOnlySet<int> SupportedSampleRates = new HashSet<int> { 44_100, 48_000 };
+    /// <remarks>
+    /// 96 kHz is here for an endpoint the user has already turned up to it — a cable left at 96 kHz
+    /// by a previous application is otherwise a route that cannot be enabled at all. The limiter is
+    /// sized from this rate, so a rate accepted here is one the stream session can also open; the
+    /// session reads this set rather than keeping a second copy of it.
+    /// </remarks>
+    public static readonly IReadOnlySet<int> SupportedSampleRates = new HashSet<int> { 44_100, 48_000, 96_000 };
+
+    /// <summary>The supported rates for a message: <c>44100, 48000 or 96000</c>.</summary>
+    public static string SupportedSampleRateList =>
+        string.Join(", ", SupportedSampleRates.OrderBy(rate => rate));
 
     /// <summary>
     /// Whether a name could be the executable of a profile at all: a plain file name, with no

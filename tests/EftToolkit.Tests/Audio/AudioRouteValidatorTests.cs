@@ -207,7 +207,7 @@ public class AudioRouteValidatorTests
     [InlineData(32_000)]
     [InlineData(88_200)]
     [InlineData(192_000)]
-    public void An_unsupported_sample_rate_is_rejected(int sampleRate)
+    public void A_sample_rate_the_toolkit_does_not_stream_is_rejected(int sampleRate)
     {
         AudioRouteValidation result = AudioRouteValidator.Validate(
             Profile(),
@@ -220,7 +220,8 @@ public class AudioRouteValidatorTests
     [Theory]
     [InlineData(44_100)]
     [InlineData(48_000)]
-    public void The_sample_rates_the_first_release_supports_are_accepted(int sampleRate)
+    [InlineData(96_000)]
+    public void The_sample_rates_the_toolkit_supports_are_accepted(int sampleRate)
     {
         AudioRouteValidation result = AudioRouteValidator.Validate(
             Profile(),

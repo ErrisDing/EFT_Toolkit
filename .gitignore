@@ -10,6 +10,11 @@ TestResults/
 # Publish output
 publish/
 
+# Locally installed third-party dependencies, such as the virtual audio cable the
+# user installs themselves. Never bundled, never redistributed: the toolkit does
+# not ship or install a driver.
+dependencies/
+
 # IDE
 .vs/
 .idea/

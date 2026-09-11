@@ -12,9 +12,11 @@
     <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
     <!--
-      The copy that states what the toolkit does and does not do is not repeated here. It is bound
-      with x:Static to the constants the tests assert, so a change to the wording cannot reach the
-      screen without reaching the test that pins it.
+      Only two pieces of copy are pulled from the view models: the HDR warning, which is what makes a
+      monitor experimental, and the note beside 应用, which is why applying interrupts the audio.
+      Both are bound with x:Static to constants the tests assert, so the wording cannot reach the
+      screen without reaching the test that pins it. The rest of the explanatory text has been
+      removed — it described the design rather than the screen.
     -->
     <Style x:Key="Note" TargetType="TextBlock">
       <Setter Property="TextWrapping" Value="Wrap" />
@@ -73,7 +75,6 @@
       <!-- Header -->
       <TextBlock Text="EFT Toolkit" FontSize="20" FontWeight="SemiBold" />
       <TextBlock Text="{Binding SummaryText}" Style="{StaticResource Note}" />
-      <TextBlock Text="{x:Static vm:MainViewModel.CloseHint}" Style="{StaticResource Note}" />
 
       <!-- Display -->
       <GroupBox Header="显示" Margin="0,12,0,0">
@@ -81,7 +82,6 @@
           <CheckBox Content="启用显示增强"
                     IsChecked="{Binding Display.IsEnabled, Mode=OneWay}"
                     Command="{Binding Display.ToggleEnabledCommand}" />
-          <TextBlock Text="{x:Static vm:DisplayViewModel.HotkeyNote}" Style="{StaticResource Note}" />
           <TextBlock Text="{Binding Display.StatusText}" Style="{StaticResource Note}" />
           <TextBlock Text="{Binding Display.CurrentPresetText}" Style="{StaticResource Note}" />
 
@@ -137,8 +137,6 @@
           <TextBlock Text="{Binding Audio.DependencyMessage}" Style="{StaticResource Problem}" />
           <TextBlock Text="{Binding Audio.WarningMessage}" Style="{StaticResource Caution}" />
 
-          <TextBlock Text="{x:Static vm:AudioViewModel.SharedModeNote}" Style="{StaticResource Note}" />
-          <TextBlock Text="{x:Static vm:AudioViewModel.RoutingNote}" Style="{StaticResource Note}" />
           <Button Content="打开 Windows 音量混合器"
                   Command="{Binding Audio.OpenVolumeMixerCommand}"
                   HorizontalAlignment="Left"

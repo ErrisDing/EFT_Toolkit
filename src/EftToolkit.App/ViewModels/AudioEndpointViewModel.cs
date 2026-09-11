@@ -1,3 +1,4 @@
+using System.Linq;
 using EftToolkit.Audio.Devices;
 using EftToolkit.Audio.Routing;
 
@@ -74,7 +75,8 @@ public sealed class AudioEndpointViewModel
 
         if (!AudioRouteValidator.SupportedSampleRates.Contains(endpoint.SampleRate))
         {
-            return "采样率 " + endpoint.SampleRate + " Hz，仅支持 44100 与 48000 Hz";
+            return "采样率 " + endpoint.SampleRate + " Hz，仅支持 "
+                + string.Join(" / ", AudioRouteValidator.SupportedSampleRates.Order()) + " Hz";
         }
 
         return null;

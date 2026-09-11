@@ -39,14 +39,6 @@ public sealed record AudioProfileChoice(string Id, string DisplayName);
 /// </remarks>
 public sealed class AudioViewModel : ObservableObject
 {
-    /// <summary>How the toolkit opens the endpoints. It never takes one exclusively.</summary>
-    public const string SharedModeNote =
-        "音频以 WASAPI 共享模式打开：不会独占设备，也绝不会回退到独占模式。";
-
-    /// <summary>What the toolkit does not do for the user.</summary>
-    public const string RoutingNote =
-        "本工具不会自动更改 Windows 的按应用音频路由，也不会安装或配置虚拟声卡。请自行把游戏的输出设到虚拟声卡。";
-
     /// <summary>Where the user does the routing the toolkit refuses to do for them.</summary>
     public const string VolumeMixerUri = "ms-settings:apps-volume";
 

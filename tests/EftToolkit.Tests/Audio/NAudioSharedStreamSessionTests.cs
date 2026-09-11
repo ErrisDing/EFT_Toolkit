@@ -133,10 +133,29 @@ public class NAudioSharedStreamSessionTests
         Assert.All(_factory.Captures, client => Assert.True(client.IsDisposed));
     }
 
+    [Fact]
+    public async Task A_route_running_at_96_kHz_is_streamed()
+    {
+        // The check that refuses a rate the limiter cannot be sized for, and the one the panel runs
+        // before enabling the route, have to name the same rates. This is the session half of that
+        // pair: a rate the panel offered and the session then refused would leave the user with an
+        // enable button that always fails.
+        WaveFormat stereo96Float = WaveFormat.CreateIeeeFloatWaveFormat(96_000, 2);
+        _factory.CaptureFormat = stereo96Float;
+        _factory.RenderFormat = stereo96Float;
+
+        await using NAudioSharedStreamSession session = CreateSession();
+
+        await session.StartAsync(Route(), Limiter(), CancellationToken.None);
+
+        Assert.True(session.IsRunning);
+    }
+
     [Theory]
     [InlineData(22_050)]
     [InlineData(32_000)]
-    [InlineData(96_000)]
+    [InlineData(88_200)]
+    [InlineData(192_000)]
     public async Task A_sample_rate_outside_the_supported_set_is_refused(int sampleRate)
     {
         _factory.CaptureFormat = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, 2);

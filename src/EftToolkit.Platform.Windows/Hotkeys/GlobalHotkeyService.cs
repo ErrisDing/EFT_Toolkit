@@ -184,8 +184,23 @@ public sealed class GlobalHotkeyService : IHotkeyService
         {
             // The identifier belongs to this toolkit but Windows refused the registration, so the
             // user never asked for this preset. Another application's message cannot be actioned.
+            // Logged because it is the only way to tell this apart from a keypress that never
+            // arrived, and the two look identical to the user: nothing happens.
+            _logger?.Write(
+                LogLevel.Warning,
+                "platform.hotkey.pressedWhileUnregistered",
+                new Dictionary<string, object?> { ["preset"] = preset.ToString() });
+
             return;
         }
+
+        // The shortcut was pressed. Recorded at Information because it is the one point that
+        // separates "the key was not captured" from "the key was captured and the ramp write did
+        // not happen", and a log that omits it leaves both possibilities open.
+        _logger?.Write(
+            LogLevel.Information,
+            "platform.hotkey.pressed",
+            new Dictionary<string, object?> { ["preset"] = preset.ToString() });
 
         PresetRequested?.Invoke(this, preset);
     }

@@ -26,9 +26,6 @@ namespace EftToolkit.App.ViewModels;
 /// </remarks>
 public sealed class MainViewModel : ObservableObject
 {
-    /// <summary>The promise the window makes when the user closes it.</summary>
-    public const string CloseHint = "关闭窗口后将在系统托盘继续运行";
-
     private readonly ToolkitCoordinator _coordinator;
     private readonly IAppLogger? _logger;
     private readonly Action<string> _open;

@@ -235,7 +235,8 @@ public class AudioModuleTests
 
     [Theory]
     [InlineData(22_050)]
-    [InlineData(96_000)]
+    [InlineData(32_000)]
+    [InlineData(88_200)]
     public async Task An_endpoint_at_an_unsupported_sample_rate_faults_with_an_unsupported_format(int sampleRate)
     {
         _catalog.Endpoints =
@@ -252,6 +253,27 @@ public class AudioModuleTests
 
         Assert.Equal(AudioModuleErrorCodes.UnsupportedFormat, module.Status.ErrorCode);
         Assert.Empty(_sessions);
+    }
+
+    [Fact]
+    public async Task An_endpoint_at_96_kHz_enables_and_opens_a_session()
+    {
+        // 96 kHz is carried rather than refused: a cable or a DAC left at that rate is otherwise a
+        // route the user can select and never switch on.
+        _catalog.Endpoints =
+        [
+            Endpoint(VirtualRenderId, AudioDataFlow.Render, sampleRate: 96_000),
+            Endpoint(VirtualCaptureId, AudioDataFlow.Capture, sampleRate: 96_000),
+            Endpoint(PhysicalRenderId, AudioDataFlow.Render, sampleRate: 96_000),
+        ];
+
+        _monitor.Running = true;
+        await using AudioModule module = CreateModule();
+
+        await module.EnableAsync(CancellationToken.None);
+
+        Assert.Equal(ModuleState.Active, module.Status.State);
+        Assert.Single(_sessions);
     }
 
     [Fact]

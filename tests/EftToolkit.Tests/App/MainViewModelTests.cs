@@ -443,12 +443,12 @@ public class MainViewModelTests
     }
 
     [Fact]
-    public async Task The_panel_says_the_window_keeps_running_in_the_tray()
+    public async Task A_freshly_opened_panel_is_not_shutting_down()
     {
         await using PanelHarness harness = await PanelHarness.CreateAsync();
 
-        // The design document states this copy; a paraphrase would be a different promise.
-        Assert.Equal("关闭窗口后将在系统托盘继续运行", MainViewModel.CloseHint);
+        // What the window's close handler reads to decide between hiding and exiting, so it has to
+        // be false for as long as the toolkit is running.
         Assert.False(harness.ViewModel.IsShuttingDown);
     }
 

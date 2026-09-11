@@ -48,9 +48,6 @@ public sealed class DisplayViewModel : ObservableObject
         ToggleEnabledCommand = new AsyncRelayCommand(ToggleEnabledAsync, onError);
     }
 
-    /// <summary>What the close button does not stop, and what the shortcuts do.</summary>
-    public const string HotkeyNote = "F2 还原原始画面，F3 低、F4 中等、F5 高，快捷键在全局生效。";
-
     /// <summary>The warning shown wherever a selected monitor runs in HDR.</summary>
     public const string HdrNote = "该显示器处于 HDR：伽马校正仍然会写入，但 HDR 下的效果属于实验性，请以实际观感为准。";
 
