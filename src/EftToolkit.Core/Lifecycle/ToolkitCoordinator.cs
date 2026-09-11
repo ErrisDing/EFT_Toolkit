@@ -371,11 +371,24 @@ public sealed class ToolkitCoordinator : IAsyncDisposable
 
     private async Task BypassAndDisableAudioAsync(CancellationToken cancellationToken)
     {
+        // Read before the write below, and the reason this is read at all: bypass is remembered, so
+        // leaving the smooth stop's bypass in place would make the next enable pass audio through
+        // unchanged without the user having asked for it.
+        bool bypassedByUser = _audio.IsBypassed;
+
         // Bypass first: the limiter stops processing before the stream closes, so stopping it is not
         // heard as a click.
         await _audio.SetBypassAsync(true, cancellationToken).ConfigureAwait(false);
         _audioEnabled = false;
         await _audio.DisableAsync(cancellationToken).ConfigureAwait(false);
+
+        if (bypassedByUser)
+        {
+            return;
+        }
+
+        // Taken back after the stream has closed, where it can no longer be heard.
+        await _audio.SetBypassAsync(false, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

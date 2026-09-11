@@ -75,8 +75,12 @@ public sealed class AudioModule : IAudioController
     /// </summary>
     private volatile IAudioStreamSession? _session;
 
-    /// <summary>Bypass is a user preference that survives the stream being closed and reopened.</summary>
-    private bool _bypass;
+    /// <summary>
+    /// Bypass is a user preference that survives the stream being closed and reopened. Volatile
+    /// because it is also read from the caller's thread by a composition that is deciding what to
+    /// write: a stale read there would undo a preference the user did express.
+    /// </summary>
+    private volatile bool _bypass;
 
     /// <summary>The executable the monitor was last started for, so it is not restarted for nothing.</summary>
     private string? _watchedName;
@@ -192,6 +196,12 @@ public sealed class AudioModule : IAudioController
             }
         }
     }
+
+    /// <summary>
+    /// The bypass preference, which is not the same thing as the state: it survives the stream being
+    /// closed, and is what a caller writes its own bypass around rather than reads back.
+    /// </summary>
+    public bool IsBypassed => _bypass;
 
     public event EventHandler<ModuleStatus>? StatusChanged;
 

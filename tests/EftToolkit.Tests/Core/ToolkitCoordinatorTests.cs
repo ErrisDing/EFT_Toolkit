@@ -327,6 +327,41 @@ public class ToolkitCoordinatorTests
         Assert.Equal(0, _display.EnableCount);
     }
 
+    [Fact]
+    public async Task Turning_audio_off_does_not_leave_the_smooth_stop_behind_as_a_preference()
+    {
+        _store.Stored = WithAudio(enabled: true);
+
+        await using ToolkitCoordinator coordinator = CreateCoordinator();
+        await coordinator.StartAsync(CancellationToken.None);
+
+        await coordinator.SetAudioEnabledAsync(false, CancellationToken.None);
+
+        // The bypass is set so that stopping the stream is not heard as a click, and then taken back:
+        // the user asked for the audio to be off, not for the next stream to pass through unchanged.
+        // Leaving it set would make the module look bypassed the next time it was switched on.
+        Assert.Contains("audio.bypass", _journal);
+        Assert.Contains("audio.unbypass", _journal);
+        Assert.False(_audio.IsBypassed);
+    }
+
+    [Fact]
+    public async Task Turning_audio_off_keeps_the_bypass_the_user_asked_for()
+    {
+        _store.Stored = WithAudio(enabled: true);
+
+        await using ToolkitCoordinator coordinator = CreateCoordinator();
+        await coordinator.StartAsync(CancellationToken.None);
+
+        // What the panel's bypass switch does, and what it must not undo when the audio is switched
+        // off and on again.
+        await _audio.SetBypassAsync(true, CancellationToken.None);
+
+        await coordinator.SetAudioEnabledAsync(false, CancellationToken.None);
+
+        Assert.True(_audio.IsBypassed);
+    }
+
     // ---------------------------------------------------------------- editing
 
     [Fact]
@@ -928,6 +963,12 @@ public class ToolkitCoordinatorTests
         public int DisableCount { get; private set; }
 
         public bool Bypass { get; private set; }
+
+        /// <summary>
+        /// The preference, as the real module reports it. Deliberately independent of the route: it
+        /// is what the coordinator has to read before it writes a bypass of its own.
+        /// </summary>
+        public bool IsBypassed => Bypass;
 
         public Exception? EnableFailure { get; set; }
 
