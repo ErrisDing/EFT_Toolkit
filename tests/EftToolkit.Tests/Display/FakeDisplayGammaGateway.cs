@@ -31,6 +31,13 @@ internal sealed class FakeDisplayGammaGateway : IDisplayGammaGateway
 
     public HashSet<string> FailOnRead { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// When set, every write is announced here. A test that has to assert a write happened before
+    /// something else did — a shutdown step, say — reads the shared journal instead of the write log,
+    /// which only says what happened and not when.
+    /// </summary>
+    public List<string>? Journal { get; set; }
+
     /// <summary>When set, writes block until it completes.</summary>
     public TaskCompletionSource? WriteGate { get; set; }
 
@@ -98,6 +105,7 @@ internal sealed class FakeDisplayGammaGateway : IDisplayGammaGateway
         _current[display.StableId] = ramp;
         WriteLog.Add(ramp);
         WriteCountByDisplay[display.StableId] = WriteCountByDisplay.GetValueOrDefault(display.StableId) + 1;
+        Journal?.Add($"display.write.{display.StableId}");
 
         return GammaWriteResult.Accepted();
     }
