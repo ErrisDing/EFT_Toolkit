@@ -96,7 +96,11 @@ jobs:
         if: steps.test.outcome != 'success'
         shell: pwsh
         run: |
-          Write-Host 'The test step failed; the names and messages are on the test-results artifact and in the job summary.'
+          $trx = Get-ChildItem artifacts/test-results -Filter '*.trx' -ErrorAction SilentlyContinue
+          $presence = if ($trx) { "a result file was written ($($trx.Length) bytes)" } else { 'NO RESULT FILE WAS WRITTEN' }
+
+          Write-Host "The test command did not succeed; $presence."
+          Write-Host 'The names and messages are on the test-results artifact and in the job summary.'
           exit 1
 
       - name: Publish
