@@ -191,6 +191,45 @@ public sealed class DisplayModule : IDisplayController
         }
     }
 
+    /// <summary>
+    /// Re-reads the machine and reports one row per display, without changing anything on any of
+    /// them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is what the panel asks for, and it is deliberately usable while the module is switched
+    /// off: a user has to be able to see their monitors in order to select one, and selecting one is
+    /// what makes switching the module on worth doing. Reading is the module's job rather than the
+    /// panel's, because the module is what knows which displays exist and which of them can be
+    /// driven.
+    /// </para>
+    /// <para>
+    /// While the module is driving the displays it owns the rows, and they already carry what each
+    /// preset write did, so they are handed back untouched rather than replaced by a bare report.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<DisplayStatus>> EnumerateAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_enabled)
+            {
+                return Displays;
+            }
+
+            SetDisplays(Describe(await _gateway.EnumerateAsync(cancellationToken).ConfigureAwait(false)));
+
+            return Displays;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
     public void UpdateOptions(DisplayOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -395,6 +434,62 @@ public sealed class DisplayModule : IDisplayController
         IReadOnlyList<DisplayDescriptor> displays,
         CancellationToken cancellationToken)
     {
+        List<DisplayStatus> captured = [];
+
+        foreach (DisplayStatus row in Describe(displays))
+        {
+            if (!row.Selected || !row.Display.IsConnected || TryGetOriginal(row.Display.StableId, out _))
+            {
+                // Nothing to capture. A display that is not connected cannot be read at all, and one
+                // that was captured on an earlier pass keeps what was read then: reading now could
+                // capture a ramp this toolkit wrote itself.
+                captured.Add(row);
+                continue;
+            }
+
+            try
+            {
+                SetOriginal(
+                    row.Display.StableId,
+                    await _gateway.ReadAsync(row.Display, cancellationToken).ConfigureAwait(false));
+
+                captured.Add(row);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // Without a readable original there is nothing to restore, so this display is left
+                // out of the selection rather than enhanced irreversibly.
+                RemoveOriginal(row.Display.StableId);
+
+                _logger?.Write(
+                    LogLevel.Warning,
+                    "display.original.unreadable",
+                    new Dictionary<string, object?> { ["displayId"] = row.Display.StableId },
+                    exception);
+
+                captured.Add(row with
+                {
+                    Selected = false,
+                    Message = "The current ramp could not be read, so this display was left unchanged.",
+                });
+            }
+        }
+
+        return captured;
+    }
+
+    /// <summary>
+    /// The rows the panel shows for the displays just enumerated: which are selected, what each one
+    /// can do, and why it cannot be driven when it cannot.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is read from or written to a display here, which is what makes the same report
+    /// available whether or not the module is switched on. A display that is selected but not
+    /// connected at all still gets a row: the selection is the user's, and a row that vanished would
+    /// look like the toolkit had forgotten it.
+    /// </remarks>
+    private List<DisplayStatus> Describe(IReadOnlyList<DisplayDescriptor> displays)
+    {
         List<DisplayStatus> rows = [];
         HashSet<string> seen = new(StringComparer.Ordinal);
 
@@ -410,7 +505,12 @@ public sealed class DisplayModule : IDisplayController
 
             if (!display.IsConnected)
             {
-                rows.Add(new DisplayStatus(display, false, DisplayPresetKind.Original, null, "This display is not connected."));
+                // Reported as selected even though nothing can be done with it: the row is in the
+                // user's selection, and a monitor that is unplugged right now is driven again as
+                // soon as it comes back. Reporting it as unselected would lose the tick the user put
+                // there, and would put the display on the deselect path — which is for monitors the
+                // user asked to stop enhancing.
+                rows.Add(new DisplayStatus(display, true, DisplayPresetKind.Original, null, "This display is not connected."));
                 continue;
             }
 
@@ -426,42 +526,9 @@ public sealed class DisplayModule : IDisplayController
                 continue;
             }
 
-            if (TryGetOriginal(display.StableId, out _))
-            {
-                // Already captured on an earlier pass; the original must not be re-read, because
-                // reading now could capture a ramp this toolkit wrote itself.
-                rows.Add(new DisplayStatus(display, true, CurrentPreset, null, null));
-                continue;
-            }
-
-            try
-            {
-                SetOriginal(display.StableId, await _gateway.ReadAsync(display, cancellationToken).ConfigureAwait(false));
-                rows.Add(new DisplayStatus(display, true, CurrentPreset, null, null));
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                // Without a readable original there is nothing to restore, so this display is left
-                // out of the selection rather than enhanced irreversibly.
-                RemoveOriginal(display.StableId);
-
-                _logger?.Write(
-                    LogLevel.Warning,
-                    "display.original.unreadable",
-                    new Dictionary<string, object?> { ["displayId"] = display.StableId },
-                    exception);
-
-                rows.Add(new DisplayStatus(
-                    display,
-                    false,
-                    DisplayPresetKind.Original,
-                    null,
-                    "The current ramp could not be read, so this display was left unchanged."));
-            }
+            rows.Add(new DisplayStatus(display, true, CurrentPreset, null, null));
         }
 
-        // Selected displays that are not present at all still get a row, so the panel can report a
-        // disconnected monitor instead of showing a selection that silently lost an entry.
         foreach (string selectedId in _options.SelectedDisplayIds)
         {
             if (seen.Contains(selectedId))

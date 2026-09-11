@@ -113,6 +113,40 @@ public class DisplayModuleTests : IDisposable
         Assert.Equal("display.selection.empty", module.Status.ErrorCode);
     }
 
+    [Fact]
+    public async Task Enumerating_reports_the_monitors_without_switching_anything_on()
+    {
+        FakeDisplayGammaGateway gateway = FakeDisplayGammaGateway.OneDisplay(Original);
+
+        await using DisplayModule module = CreateModule(gateway, "display-1", "unplugged");
+
+        // The panel has to be able to show a monitor for the user to select before the module is on:
+        // asking the user to switch the feature on in order to choose what it acts on is backwards.
+        IReadOnlyList<DisplayStatus> rows = await module.EnumerateAsync(CancellationToken.None);
+
+        Assert.Equal(2, rows.Count);
+        Assert.True(rows[0].Selected);
+
+        // The monitor that is not there is still part of the selection: it was chosen, it is simply
+        // not plugged in, and the row says so rather than quietly dropping out of the list.
+        Assert.True(rows[1].Selected);
+        Assert.False(rows[1].Display.IsConnected);
+        Assert.Contains("not connected", rows[1].Message, StringComparison.Ordinal);
+
+        // Reading is all it did: nothing is on, no ramp was touched, and there is nothing to recover.
+        Assert.Equal(ModuleState.Disabled, module.Status.State);
+        Assert.Empty(gateway.WriteLog);
+        Assert.Null(await _store.LoadAsync(CancellationToken.None));
+
+        // The report is not a capture, so enabling afterwards still reads what is on the display.
+        await module.EnableAsync(CancellationToken.None);
+
+        DisplayRecoveryEntry entry = Assert.Single((await _store.LoadAsync(CancellationToken.None))!.Displays);
+        Assert.Equal("display-1", entry.StableId);
+        Assert.True(entry.TryReadOriginalRamp(out GammaRamp? captured));
+        Assert.Equal(Original, captured);
+    }
+
     // ---------------------------------------------------------------- presets
 
     [Fact]

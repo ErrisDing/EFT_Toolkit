@@ -1,10 +1,263 @@
 <Window x:Class="EftToolkit.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:EftToolkit.App.ViewModels"
         Title="EFT Toolkit"
-        Height="520"
-        Width="820"
+        Height="780"
+        Width="880"
         MinWidth="720"
-        MaxWidth="900">
-  <Grid />
+        MaxWidth="900"
+        MinHeight="520">
+  <Window.Resources>
+    <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+    <!--
+      The copy that states what the toolkit does and does not do is not repeated here. It is bound
+      with x:Static to the constants the tests assert, so a change to the wording cannot reach the
+      screen without reaching the test that pins it.
+    -->
+    <Style x:Key="Note" TargetType="TextBlock">
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Foreground" Value="#555555" />
+      <Setter Property="Margin" Value="0,2,0,2" />
+    </Style>
+
+    <Style x:Key="Problem" TargetType="TextBlock">
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Foreground" Value="#B00020" />
+      <Setter Property="Margin" Value="0,2,0,2" />
+    </Style>
+
+    <Style x:Key="Caution" TargetType="TextBlock">
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Foreground" Value="#8A6100" />
+      <Setter Property="Margin" Value="0,2,0,2" />
+    </Style>
+
+    <Style x:Key="SectionLabel" TargetType="TextBlock">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,10,0,2" />
+    </Style>
+
+    <Style x:Key="SampleField" TargetType="TextBox">
+      <Setter Property="Width" Value="64" />
+      <Setter Property="Margin" Value="4,0,12,0" />
+      <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+
+    <!-- One preset, used three times, so the three blocks cannot drift apart. -->
+    <DataTemplate x:Key="PresetTemplate">
+      <StackPanel Orientation="Horizontal" Margin="0,3,0,3">
+        <TextBlock Text="{Binding Label}" Width="76" VerticalAlignment="Center" />
+        <TextBlock Text="伽马" VerticalAlignment="Center" />
+        <TextBox Style="{StaticResource SampleField}"
+                 Text="{Binding GammaText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Text="阴影提亮" VerticalAlignment="Center" />
+        <TextBox Style="{StaticResource SampleField}"
+                 Text="{Binding ShadowLiftText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Text="输出上限" VerticalAlignment="Center" />
+        <TextBox Style="{StaticResource SampleField}"
+                 Text="{Binding OutputCeilingText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button Content="应用" Command="{Binding ApplyCommand}" MinWidth="56" />
+        <TextBlock Text="{Binding ValidationMessage}"
+                   Style="{StaticResource Problem}"
+                   VerticalAlignment="Center"
+                   Margin="8,0,0,0" />
+      </StackPanel>
+    </DataTemplate>
+  </Window.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12,16,8">
+    <StackPanel>
+
+      <!-- Header -->
+      <TextBlock Text="EFT Toolkit" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding SummaryText}" Style="{StaticResource Note}" />
+      <TextBlock Text="{x:Static vm:MainViewModel.CloseHint}" Style="{StaticResource Note}" />
+
+      <!-- Display -->
+      <GroupBox Header="显示" Margin="0,12,0,0">
+        <StackPanel>
+          <CheckBox Content="启用显示增强"
+                    IsChecked="{Binding Display.IsEnabled, Mode=OneWay}"
+                    Command="{Binding Display.ToggleEnabledCommand}" />
+          <TextBlock Text="{x:Static vm:DisplayViewModel.HotkeyNote}" Style="{StaticResource Note}" />
+          <TextBlock Text="{Binding Display.StatusText}" Style="{StaticResource Note}" />
+          <TextBlock Text="{Binding Display.CurrentPresetText}" Style="{StaticResource Note}" />
+
+          <TextBlock Text="显示器" Style="{StaticResource SectionLabel}" />
+          <ItemsControl ItemsSource="{Binding Display.Monitors}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border BorderBrush="#DDDDDD" BorderThickness="0,0,0,1" Padding="0,4,0,4">
+                  <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                      <CheckBox Content="{Binding Name}"
+                                IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                Command="{Binding ToggleSelectionCommand}" />
+                      <TextBlock Text="HDR（实验性）"
+                                 Style="{StaticResource Caution}"
+                                 Margin="8,0,0,0"
+                                 Visibility="{Binding IsHdr, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding StateText}" Style="{StaticResource Note}" Margin="20,0,0,0" />
+                    <TextBlock Text="{Binding Message}" Style="{StaticResource Note}" Margin="20,0,0,0" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <TextBlock Text="{x:Static vm:DisplayViewModel.HdrNote}"
+                     Style="{StaticResource Caution}"
+                     Visibility="{Binding Display.IsHdrPresent, Converter={StaticResource BoolToVisibility}}" />
+
+          <TextBlock Text="预设（F2 始终还原原始画面）" Style="{StaticResource SectionLabel}" />
+          <ContentControl Content="{Binding Display.Low}" ContentTemplate="{StaticResource PresetTemplate}" />
+          <ContentControl Content="{Binding Display.Medium}" ContentTemplate="{StaticResource PresetTemplate}" />
+          <ContentControl Content="{Binding Display.High}" ContentTemplate="{StaticResource PresetTemplate}" />
+
+          <TextBlock Text="{Binding Display.ValidationMessage}" Style="{StaticResource Problem}" />
+        </StackPanel>
+      </GroupBox>
+
+      <!-- Audio -->
+      <GroupBox Header="音频增强（可选）" Margin="0,12,0,0">
+        <StackPanel>
+          <CheckBox Content="启用音频增强"
+                    IsChecked="{Binding Audio.IsEnabled, Mode=OneWay}"
+                    Command="{Binding Audio.ToggleEnabledCommand}" />
+          <CheckBox Content="旁路：音频原样通过，不做任何处理"
+                    IsChecked="{Binding Audio.IsBypassed, Mode=OneWay}"
+                    Command="{Binding Audio.ToggleBypassCommand}" />
+
+          <TextBlock Text="{Binding Audio.StatusText}" Style="{StaticResource Note}" />
+          <TextBlock Text="{Binding Audio.TargetText}" Style="{StaticResource Note}" />
+          <TextBlock Text="{Binding Audio.RouteText}" Style="{StaticResource Note}" />
+          <TextBlock Text="{Binding Audio.DependencyMessage}" Style="{StaticResource Problem}" />
+          <TextBlock Text="{Binding Audio.WarningMessage}" Style="{StaticResource Caution}" />
+
+          <TextBlock Text="{x:Static vm:AudioViewModel.SharedModeNote}" Style="{StaticResource Note}" />
+          <TextBlock Text="{x:Static vm:AudioViewModel.RoutingNote}" Style="{StaticResource Note}" />
+          <Button Content="打开 Windows 音量混合器"
+                  Command="{Binding Audio.OpenVolumeMixerCommand}"
+                  HorizontalAlignment="Left"
+                  Margin="0,4,0,4"
+                  MinWidth="180" />
+
+          <TextBlock Text="配置" Style="{StaticResource SectionLabel}" />
+          <ComboBox ItemsSource="{Binding Audio.Profiles}"
+                    SelectedItem="{Binding Audio.SelectedProfile, Mode=TwoWay}"
+                    DisplayMemberPath="DisplayName"
+                    MinWidth="360"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Text="应用程序（只填文件名，例如 EscapeFromTarkov）" Style="{StaticResource SectionLabel}" />
+          <TextBox Text="{Binding Audio.ExecutableNameText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                   Width="280"
+                   HorizontalAlignment="Left" />
+
+          <TextBlock Text="虚拟播放设备：游戏的输出改到这里" Style="{StaticResource SectionLabel}" />
+          <ComboBox ItemsSource="{Binding Audio.VirtualRenderEndpoints}"
+                    SelectedItem="{Binding Audio.SelectedVirtualRender, Mode=TwoWay}"
+                    MinWidth="420"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Text="虚拟录音设备：本工具从这里取回音频" Style="{StaticResource SectionLabel}" />
+          <ComboBox ItemsSource="{Binding Audio.VirtualCaptureEndpoints}"
+                    SelectedItem="{Binding Audio.SelectedVirtualCapture, Mode=TwoWay}"
+                    MinWidth="420"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Text="物理播放设备：声音最终去哪里" Style="{StaticResource SectionLabel}" />
+          <ComboBox ItemsSource="{Binding Audio.PhysicalRenderEndpoints}"
+                    SelectedItem="{Binding Audio.SelectedPhysicalRender, Mode=TwoWay}"
+                    MinWidth="420"
+                    HorizontalAlignment="Left" />
+
+          <TextBlock Text="限幅器" Style="{StaticResource SectionLabel}" />
+          <WrapPanel>
+            <TextBlock Text="增益" VerticalAlignment="Center" />
+            <TextBox Style="{StaticResource SampleField}"
+                     Text="{Binding Audio.GainDbText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="阈值" VerticalAlignment="Center" />
+            <TextBox Style="{StaticResource SampleField}"
+                     Text="{Binding Audio.ThresholdDbFsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="输出上限" VerticalAlignment="Center" />
+            <TextBox Style="{StaticResource SampleField}"
+                     Text="{Binding Audio.CeilingDbFsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button Content="应用" Command="{Binding Audio.ApplySettingsCommand}" MinWidth="56" />
+            <Button Content="重试" Command="{Binding Audio.RetryCommand}" MinWidth="56" Margin="8,0,0,0" />
+          </WrapPanel>
+          <TextBlock Text="{Binding Audio.SettingsMessage}" Style="{StaticResource Problem}" />
+          <TextBlock Text="{x:Static vm:AudioViewModel.RestartNote}" Style="{StaticResource Note}" />
+
+          <TextBlock Text="电平" Style="{StaticResource SectionLabel}" />
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="输入" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ProgressBar Grid.Row="0" Grid.Column="1"
+                         Height="10"
+                         Minimum="-60"
+                         Maximum="0"
+                         Value="{Binding Audio.InputPeakDbFs, Mode=OneWay}" />
+            <TextBlock Grid.Row="0" Grid.Column="2"
+                       Text="{Binding Audio.InputPeakText}"
+                       MinWidth="64"
+                       TextAlignment="Right" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="输出" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ProgressBar Grid.Row="1" Grid.Column="1"
+                         Height="10"
+                         Minimum="-60"
+                         Maximum="0"
+                         Value="{Binding Audio.OutputPeakDbFs, Mode=OneWay}" />
+            <TextBlock Grid.Row="1" Grid.Column="2"
+                       Text="{Binding Audio.OutputPeakText}"
+                       MinWidth="64"
+                       TextAlignment="Right" />
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="压限" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ProgressBar Grid.Row="2" Grid.Column="1"
+                         Height="10"
+                         Minimum="0"
+                         Maximum="12"
+                         Value="{Binding Audio.GainReductionDb, Mode=OneWay}" />
+            <TextBlock Grid.Row="2" Grid.Column="2"
+                       Text="{Binding Audio.GainReductionText}"
+                       MinWidth="64"
+                       TextAlignment="Right" />
+          </Grid>
+          <TextBlock Text="{Binding Audio.LatencyText}" Style="{StaticResource Note}" />
+          <TextBlock Text="{Binding Audio.CountersText}" Style="{StaticResource Note}" />
+        </StackPanel>
+      </GroupBox>
+
+      <!-- Footer -->
+      <Border BorderBrush="#DDDDDD" BorderThickness="0,1,0,0" Padding="0,8,0,0" Margin="0,14,0,0">
+        <DockPanel>
+          <Button DockPanel.Dock="Right"
+                  Content="打开日志文件夹"
+                  Command="{Binding OpenLogsFolderCommand}"
+                  MinWidth="120" />
+          <TextBlock Text="{Binding LatestWarning}"
+                     Style="{StaticResource Problem}"
+                     VerticalAlignment="Center"
+                     Margin="0,0,12,0"
+                     Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}" />
+        </DockPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
 </Window>

@@ -25,6 +25,19 @@ public static class AudioRouteValidator
     /// </summary>
     public static readonly IReadOnlySet<int> SupportedSampleRates = new HashSet<int> { 44_100, 48_000 };
 
+    /// <summary>
+    /// Whether a name could be the executable of a profile at all: a plain file name, with no
+    /// directory in it.
+    /// </summary>
+    /// <remarks>
+    /// The panel checks its field with this rather than with a rule of its own, so that what the
+    /// user is allowed to type and what the route validator will accept are the same rule. This says
+    /// nothing about whether the application exists — only <see cref="Validate"/> can say whether a
+    /// route is openable.
+    /// </remarks>
+    public static bool IsUsableExecutableName(string? executableName) =>
+        ProcessNames.TryNormalize(executableName, out _);
+
     public static AudioRouteValidation Validate(
         AudioProfileOptions profile,
         IReadOnlyList<AudioEndpointDescriptor> endpoints)

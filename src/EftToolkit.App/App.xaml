@@ -1,6 +1,10 @@
 <Application x:Class="EftToolkit.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="MainWindow.xaml">
+             ShutdownMode="OnExplicitShutdown">
+  <!--
+    No StartupUri: the window is built by OnStartup once the single-instance claim has been made,
+    and it is the tray's Exit command - not the last window closing - that ends the application.
+  -->
   <Application.Resources />
 </Application>
