@@ -8,6 +8,12 @@ namespace EftToolkit.Tests.Display;
 /// displays attached and because a gamma write is visible to whoever is looking at the screen. Run it
 /// deliberately with <c>dotnet test --filter "Category=Hardware"</c>.
 /// <para>
+/// The category filter alone is not the whole gate: a CI job or a developer can select the category
+/// without meaning to touch hardware, so the environment variable
+/// <c>EFT_TOOLKIT_HARDWARE_TESTS=1</c> must also be set. Without it these tests report as skipped
+/// rather than passing without having checked anything.
+/// </para>
+/// <para>
 /// This test never writes a gamma ramp. Writing is covered by the manual checklist, where a person can
 /// confirm what they see on the panel.
 /// </para>
@@ -15,9 +21,21 @@ namespace EftToolkit.Tests.Display;
 [Trait("Category", "Hardware")]
 public class Win32DisplayGammaGatewayHardwareTests
 {
+    private const string EnableVariable = "EFT_TOOLKIT_HARDWARE_TESTS";
+
+    /// <summary>Skips the calling test unless hardware testing has been explicitly enabled.</summary>
+    private static void RequireHardware()
+    {
+        Assert.SkipUnless(
+            Environment.GetEnvironmentVariable(EnableVariable) == "1",
+            $"Set {EnableVariable}=1 to run tests that touch real display hardware.");
+    }
+
     [Fact]
     public async Task Enumerate_finds_at_least_one_display()
     {
+        RequireHardware();
+
         Win32DisplayGammaGateway gateway = new();
 
         IReadOnlyList<DisplayDescriptor> displays = await gateway.EnumerateAsync(CancellationToken.None);
@@ -34,6 +52,8 @@ public class Win32DisplayGammaGatewayHardwareTests
     [Fact]
     public async Task Enumerate_reports_stable_ids_that_do_not_change_between_calls()
     {
+        RequireHardware();
+
         Win32DisplayGammaGateway gateway = new();
 
         IReadOnlyList<DisplayDescriptor> first = await gateway.EnumerateAsync(CancellationToken.None);
@@ -47,6 +67,8 @@ public class Win32DisplayGammaGatewayHardwareTests
     [Fact]
     public async Task Every_display_that_supports_gamma_reports_a_well_formed_ramp()
     {
+        RequireHardware();
+
         Win32DisplayGammaGateway gateway = new();
 
         IReadOnlyList<DisplayDescriptor> displays = await gateway.EnumerateAsync(CancellationToken.None);
@@ -69,6 +91,8 @@ public class Win32DisplayGammaGatewayHardwareTests
     [Fact]
     public async Task A_display_that_does_not_support_gamma_cannot_be_read()
     {
+        RequireHardware();
+
         Win32DisplayGammaGateway gateway = new();
 
         IReadOnlyList<DisplayDescriptor> displays = await gateway.EnumerateAsync(CancellationToken.None);
