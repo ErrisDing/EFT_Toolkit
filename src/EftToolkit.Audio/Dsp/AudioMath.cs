@@ -21,4 +21,11 @@ public static class AudioMath
     /// </summary>
     public static double LinearToDbSafe(double linear) =>
         linear <= Silence ? LinearToDb(Silence) : LinearToDb(linear);
+
+    /// <summary>
+    /// Replaces a non-finite sample with silence. A NaN reaching a detector would poison every
+    /// gain derived from it, and an infinity would survive a multiply and be replayed from a delay
+    /// line long after the sample that caused it was gone.
+    /// </summary>
+    public static float Sanitize(float sample) => float.IsFinite(sample) ? sample : 0.0f;
 }

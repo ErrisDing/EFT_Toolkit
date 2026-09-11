@@ -91,8 +91,8 @@ public sealed class StereoLinkedLimiter
         {
             // A NaN or an infinity from the capture side must not be multiplied by the envelope and
             // then stored in the delay line, where it would keep reappearing.
-            float left = Sanitize(interleavedStereo[offset]) * (float)_inputGainLinear;
-            float right = Sanitize(interleavedStereo[offset + 1]) * (float)_inputGainLinear;
+            float left = AudioMath.Sanitize(interleavedStereo[offset]) * (float)_inputGainLinear;
+            float right = AudioMath.Sanitize(interleavedStereo[offset + 1]) * (float)_inputGainLinear;
 
             double peak = Math.Max(Math.Abs(left), Math.Abs(right));
 
@@ -272,6 +272,4 @@ public sealed class StereoLinkedLimiter
 
         return (delayedLeft, delayedRight);
     }
-
-    private static float Sanitize(float sample) => float.IsFinite(sample) ? sample : 0.0f;
 }

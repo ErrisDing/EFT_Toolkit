@@ -1,5 +1,6 @@
 using EftToolkit.Audio.Processes;
 using EftToolkit.Core.Diagnostics;
+using EftToolkit.Tests.TestSupport;
 
 namespace EftToolkit.Tests.Audio;
 
@@ -353,34 +354,4 @@ public class PollingProcessMonitorTests
         }
     }
 
-    private sealed class RecordingLogger : IAppLogger
-    {
-        private readonly object _gate = new();
-        private readonly List<(LogLevel Level, string EventName)> _entries = [];
-
-        internal IReadOnlyList<(LogLevel Level, string EventName)> Entries
-        {
-            get
-            {
-                lock (_gate)
-                {
-                    return _entries.ToArray();
-                }
-            }
-        }
-
-        public void Write(
-            LogLevel level,
-            string eventName,
-            IReadOnlyDictionary<string, object?>? properties = null,
-            Exception? exception = null)
-        {
-            lock (_gate)
-            {
-                _entries.Add((level, eventName));
-            }
-        }
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
 }
