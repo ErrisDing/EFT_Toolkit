@@ -43,7 +43,29 @@ jobs:
       - name: Test
         id: test
         continue-on-error: true
-        run: dotnet test EftToolkit.sln --configuration Release --no-build --filter 'Category!=Hardware' --logger "trx;LogFileName=test-results.trx" --results-directory artifacts/test-results
+        shell: pwsh
+        run: |
+          # The whole output is kept, not just the trx. A test host that dies before the tests run
+          # writes no trx at all, and the reason is then only in this output - which is the case this
+          # was written for.
+          #
+          # Captured into a variable rather than piped, because $LASTEXITCODE is only the command's
+          # own code when nothing follows it in the pipeline.
+          $output = dotnet test EftToolkit.sln `
+            --configuration Release `
+            --no-build `
+            --filter 'Category!=Hardware' `
+            --logger "trx;LogFileName=test-results.trx" `
+            --results-directory artifacts/test-results `
+            --verbosity normal *>&1
+
+          $exitCode = $LASTEXITCODE
+
+          $output | ForEach-Object { Write-Host $_ }
+          New-Item -ItemType Directory -Force artifacts/test-results | Out-Null
+          $output | Out-File artifacts/test-results/test-output.log
+
+          exit $exitCode
 
       - name: Upload the test results
         if: always()
@@ -68,6 +90,16 @@ jobs:
             $verdict = 'NO RESULT FILE WAS WRITTEN - the tests did not run to completion'
             $verdict | Add-Content $env:GITHUB_STEP_SUMMARY
             Write-Host $verdict
+
+            # Without a result file, the command's own output is the only account of what happened.
+            $log = 'artifacts/test-results/test-output.log'
+
+            if (Test-Path $log) {
+              $tail = Get-Content $log -Tail 60
+              $tail | Add-Content $env:GITHUB_STEP_SUMMARY
+              Write-Host ($tail -join "`n")
+            }
+
             "verdict=$verdict" | Add-Content $env:GITHUB_OUTPUT
             exit 0
           }
