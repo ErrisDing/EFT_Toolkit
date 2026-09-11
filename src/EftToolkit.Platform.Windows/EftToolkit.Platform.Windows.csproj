@@ -3,6 +3,8 @@
   <PropertyGroup>
     <RootNamespace>EftToolkit.Platform.Windows</RootNamespace>
     <AssemblyName>EftToolkit.Platform.Windows</AssemblyName>
+    <!-- The window class name is pinned while RegisterClassEx is called, and [LibraryImport] emits unsafe stubs. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

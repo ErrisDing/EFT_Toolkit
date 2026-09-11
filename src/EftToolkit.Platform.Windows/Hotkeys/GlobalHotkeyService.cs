@@ -1,0 +1,208 @@
+using EftToolkit.Core.Diagnostics;
+using EftToolkit.Core.Display;
+using EftToolkit.Core.Platform;
+using EftToolkit.Platform.Windows.Messaging;
+
+namespace EftToolkit.Platform.Windows.Hotkeys;
+
+/// <summary>
+/// Holds the F2-F5 shortcuts and turns them into preset requests. No keyboard hook is installed:
+/// the shortcuts are registered with Windows and delivered as ordinary messages to
+/// <see cref="IWindowsMessageSource"/>.
+/// </summary>
+public sealed class GlobalHotkeyService : IHotkeyService
+{
+    private readonly IWindowsMessageSource _messageSource;
+    private readonly IHotkeyRegistrar _registrar;
+    private readonly IAppLogger? _logger;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
+    /// <summary>Per-preset registration outcome, read by the panel and written by the message thread.</summary>
+    private readonly Dictionary<DisplayPresetKind, bool> _registrations = [];
+
+    private bool _registered;
+
+    public GlobalHotkeyService(
+        IWindowsMessageSource messageSource,
+        IHotkeyRegistrar registrar,
+        IAppLogger? logger = null)
+    {
+        _messageSource = messageSource ?? throw new ArgumentNullException(nameof(messageSource));
+        _registrar = registrar ?? throw new ArgumentNullException(nameof(registrar));
+        _logger = logger;
+
+        // Every preset is present from the start, so a caller reading Registrations before the
+        // shortcuts are taken sees "not held" rather than a missing key.
+        foreach (DisplayPresetKind preset in WindowsMessageDecoder.Presets)
+        {
+            _registrations[preset] = false;
+        }
+    }
+
+    /// <summary>Wires the real message window and the real Win32 registrations.</summary>
+    public static GlobalHotkeyService Create(IAppLogger? logger = null) =>
+        new(new WindowsMessageSink(logger), new Win32HotkeyRegistrar(), logger);
+
+    public event EventHandler<DisplayPresetKind>? PresetRequested;
+
+    public IReadOnlyDictionary<DisplayPresetKind, bool> Registrations
+    {
+        get
+        {
+            lock (_registrations)
+            {
+                return new Dictionary<DisplayPresetKind, bool>(_registrations);
+            }
+        }
+    }
+
+    public async Task RegisterAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_registered)
+            {
+                return;
+            }
+
+            await _messageSource.StartAsync(cancellationToken).ConfigureAwait(false);
+            _messageSource.MessageReceived += OnMessageReceived;
+
+            foreach (DisplayPresetKind preset in WindowsMessageDecoder.Presets)
+            {
+                int hotkeyId = WindowsMessageDecoder.HotkeyIdFor(preset);
+                uint virtualKey = WindowsMessageDecoder.VirtualKeyFor(preset);
+                nint window = _messageSource.WindowHandle;
+
+                // Registered on the window's own thread, which Windows requires of RegisterHotKey.
+                bool held = await _messageSource
+                    .InvokeAsync(
+                        () => _registrar.TryRegister(window, hotkeyId, WindowsMessageDecoder.ModNoRepeat, virtualKey),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                SetRegistration(preset, held);
+
+                if (!held)
+                {
+                    // A collision costs the user one shortcut, not all four, so it is reported and
+                    // the loop continues.
+                    _logger?.Write(
+                        LogLevel.Warning,
+                        "platform.hotkey.rejected",
+                        new Dictionary<string, object?>
+                        {
+                            ["preset"] = preset.ToString(),
+                            ["hotkeyId"] = hotkeyId,
+                        });
+                }
+            }
+
+            _registered = true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task UnregisterAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_registered)
+            {
+                return;
+            }
+
+            _messageSource.MessageReceived -= OnMessageReceived;
+
+            // Released before the window is destroyed: the registration is bound to the handle and
+            // to the thread that made it, so tearing the window down first would leave Windows
+            // holding a stale pair.
+            foreach (DisplayPresetKind preset in WindowsMessageDecoder.Presets)
+            {
+                if (!IsRegistered(preset))
+                {
+                    continue;
+                }
+
+                int hotkeyId = WindowsMessageDecoder.HotkeyIdFor(preset);
+                nint window = _messageSource.WindowHandle;
+
+                await _messageSource
+                    .InvokeAsync(
+                        () =>
+                        {
+                            _registrar.Unregister(window, hotkeyId);
+                            return true;
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                SetRegistration(preset, false);
+            }
+
+            await _messageSource.StopAsync(cancellationToken).ConfigureAwait(false);
+            _registered = false;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await UnregisterAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger?.Write(LogLevel.Warning, "platform.hotkey.unregisterFailed", exception: exception);
+        }
+
+        await _messageSource.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private void OnMessageReceived(object? sender, WindowsMessage message)
+    {
+        if (message.Id != WindowsMessageDecoder.WmHotkey)
+        {
+            return;
+        }
+
+        if (!WindowsMessageDecoder.TryDecodeHotkey((int)message.WParam, out DisplayPresetKind preset))
+        {
+            return;
+        }
+
+        if (!IsRegistered(preset))
+        {
+            // The identifier belongs to this toolkit but Windows refused the registration, so the
+            // user never asked for this preset. Another application's message cannot be actioned.
+            return;
+        }
+
+        PresetRequested?.Invoke(this, preset);
+    }
+
+    private bool IsRegistered(DisplayPresetKind preset)
+    {
+        lock (_registrations)
+        {
+            return _registrations[preset];
+        }
+    }
+
+    private void SetRegistration(DisplayPresetKind preset, bool held)
+    {
+        lock (_registrations)
+        {
+            _registrations[preset] = held;
+        }
+    }
+}
