@@ -3,6 +3,9 @@ name: windows
 on:
   push:
     branches: [main]
+    # A version tag is what turns a green run into a release. The release job below runs only for
+    # these, so an ordinary push to main still just builds and tests.
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -79,3 +82,46 @@ jobs:
           name: eft-toolkit-win-x64
           path: artifacts/publish/win-x64
           if-no-files-found: error
+
+  # A release is cut from a tag rather than from a local build on purpose. Everything above - build,
+  # tests, the ASIO dependency checks, and the publish itself - has to have passed on a real Windows
+  # runner before anything is offered for download, which is the only way a claim about a Windows
+  # artifact is worth making. The artifact is uploaded here and nowhere else.
+  release:
+    name: Release (tag only)
+    needs: build-test-publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: eft-toolkit-win-x64
+          path: eft-toolkit-win-x64
+
+      - name: Package
+        shell: pwsh
+        run: |
+          # The release carries a zip as well as the raw executable: the exe is what someone runs,
+          # and the zip is what carries the license and readme beside it without any chance of them
+          # being separated. Both are 75 MB of compressed runtime, so the zip costs almost nothing.
+          #
+          # Named from the tag rather than from a literal. A hard-coded version here would go on
+          # producing 0.1.0 archives at every later tag, and nothing would fail to say so.
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          Compress-Archive -Path eft-toolkit-win-x64/* -DestinationPath "eft-toolkit-$version-win-x64.zip"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+
+          gh release create ${{ github.ref_name }} `
+            --title "EFT Toolkit ${{ github.ref_name }}" `
+            --notes "Windows 11 x64. Unpack and run EftToolkit.App.exe - no installer and no administrator rights." `
+            "eft-toolkit-$version-win-x64.zip" `
+            eft-toolkit-win-x64/EftToolkit.App.exe
