@@ -2,6 +2,7 @@ using EftToolkit.Core.Diagnostics;
 using EftToolkit.Core.Display;
 using EftToolkit.Core.Platform;
 using EftToolkit.Platform.Windows.Messaging;
+using EftToolkit.Platform.Windows.Processes;
 
 namespace EftToolkit.Platform.Windows.Hotkeys;
 
@@ -16,6 +17,17 @@ public sealed class GlobalHotkeyService : IHotkeyService
     private readonly IHotkeyRegistrar _registrar;
     private readonly IAppLogger? _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    /// <summary>
+    /// Executables whose elevation deprives the shortcuts of the keyboard while they have focus.
+    /// </summary>
+    /// <remarks>
+    /// The toolkit's reason to exist is one game, so the names are stated rather than derived: an
+    /// elevated process that is not the game is not a conflict the user needs told about, and the
+    /// audio profiles that also name these executables belong to a module the display half must not
+    /// depend on.
+    /// </remarks>
+    private static readonly string[] GamesWatchedByTheToolkit = ["EscapeFromTarkov", "EscapeFromTarkov_BE"];
 
     /// <summary>Per-preset registration outcome, read by the panel and written by the message thread.</summary>
     private readonly Dictionary<DisplayPresetKind, bool> _registrations = [];
@@ -119,11 +131,51 @@ public sealed class GlobalHotkeyService : IHotkeyService
             }
 
             _registered = true;
+
+            ReportElevationConflict();
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Records the one failure this service cannot see for itself.
+    /// </summary>
+    /// <remarks>
+    /// A shortcut registered against this process is not delivered while an elevated window holds
+    /// the foreground, and nothing here can detect that: <c>RegisterHotKey</c> reports success and
+    /// the message is withheld below the application. Rather than leave the user with four working
+    /// registrations and no explanation, the conflict is stated once, at the moment the shortcuts
+    /// are taken.
+    /// </remarks>
+    private void ReportElevationConflict()
+    {
+        if (_logger is null || ProcessElevationProbe.IsCurrentProcessElevated())
+        {
+            // Running elevated is the case where the shortcuts do keep working, so there is nothing
+            // to report - and a warning that fires on the working configuration trains the user to
+            // ignore it.
+            return;
+        }
+
+        IReadOnlyList<string> elevated = ProcessElevationProbe.FindElevatedProcesses(GamesWatchedByTheToolkit);
+
+        if (elevated.Count == 0)
+        {
+            return;
+        }
+
+        _logger.Write(
+            LogLevel.Warning,
+            "platform.hotkey.elevationConflict",
+            new Dictionary<string, object?>
+            {
+                ["elevatedProcesses"] = string.Join(", ", elevated),
+                ["detail"] = "The shortcuts are registered but Windows withholds them while an elevated window has focus. "
+                    + "Run this toolkit elevated as well, or run the game without elevation.",
+            });
     }
 
     public async Task UnregisterAsync(CancellationToken cancellationToken)
