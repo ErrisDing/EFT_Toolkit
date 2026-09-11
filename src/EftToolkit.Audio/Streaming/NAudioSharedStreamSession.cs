@@ -37,8 +37,18 @@ public sealed class NAudioSharedStreamSession : IAudioStreamSession
     /// <summary>The render buffer the physical endpoint is opened with, in milliseconds.</summary>
     public const int RenderLatencyMilliseconds = 20;
 
-    /// <summary>The capture buffer the virtual endpoint is opened with, in milliseconds.</summary>
-    public const int CaptureBufferMilliseconds = 100;
+    /// <summary>
+    /// The capture buffer the virtual endpoint is opened with, in milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// Kept equal to the render latency rather than at the 100 ms a capture stream would normally
+    /// ask for. These buffers are the toolkit's own contribution to the delay between the game
+    /// making a sound and the user hearing it, and 100 ms of it is audible as a lag that the user
+    /// cannot attribute to anything. The cost is a smaller margin against the capture thread being
+    /// starved, which shows up as an underrun — a dropout — rather than as latency, and underruns
+    /// are counted and reported.
+    /// </remarks>
+    public const int CaptureBufferMilliseconds = 20;
 
     /// <summary>
     /// Rates the toolkit will stream at. Anything else is refused rather than resampled to, because

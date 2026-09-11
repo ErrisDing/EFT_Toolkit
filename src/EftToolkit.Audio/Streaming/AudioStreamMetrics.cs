@@ -16,7 +16,10 @@ namespace EftToolkit.Audio.Streaming;
 /// <param name="CaptureBufferMilliseconds">The buffer the capture endpoint was opened with.</param>
 /// <param name="RenderBufferMilliseconds">The buffer the render endpoint was opened with.</param>
 /// <param name="EstimatedAdditionalLatencyMilliseconds">
-/// The delay the toolkit itself adds, over and above what the endpoints already had.
+/// The steady-state delay the toolkit itself adds, over and above what the endpoints already had:
+/// the two buffers it opens them with, the limiter's look-ahead, and the resampler when the two
+/// endpoints disagree about the sample rate. This is the number the operator acts on, so it counts
+/// only delay this toolkit is responsible for.
 /// </param>
 public sealed record AudioStreamMetrics(
     long Underruns,

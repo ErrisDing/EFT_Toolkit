@@ -80,10 +80,13 @@ public class PollingProcessMonitorTests
 
         _provider.ProcessIds = new HashSet<int> { 42 };
 
-        await WaitUntilAsync(() => monitor.IsRunning, "the new process was never reported");
+        // Waiting on the reported state rather than on the notification would race: the monitor
+        // publishes the new set before it raises Changed, so the state can be visible for a moment
+        // while the handler has not run yet.
+        await WaitUntilAsync(() => Volatile.Read(ref raised) >= 1, "the new process was never reported");
 
+        Assert.True(monitor.IsRunning);
         Assert.True(monitor.ProcessIds.SetEquals([42]));
-        Assert.True(Volatile.Read(ref raised) >= 1);
     }
 
     [Fact]
@@ -100,10 +103,11 @@ public class PollingProcessMonitorTests
 
         _provider.ProcessIds = new HashSet<int>();
 
-        await WaitUntilAsync(() => !monitor.IsRunning, "the exit was never reported");
+        // As above: the notification is what this test is about, so it is what is waited on.
+        await WaitUntilAsync(() => Volatile.Read(ref raised) >= 1, "the exit was never reported");
 
+        Assert.False(monitor.IsRunning);
         Assert.Empty(monitor.ProcessIds);
-        Assert.True(Volatile.Read(ref raised) >= 1);
     }
 
     [Fact]
