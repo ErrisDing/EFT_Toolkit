@@ -15,6 +15,8 @@ internal sealed class RecordingLogger : IAppLogger
     private readonly object _gate = new();
     private readonly List<LogEntry> _entries = [];
 
+    private int _disposeCount;
+
     internal IReadOnlyList<LogEntry> Entries
     {
         get
@@ -28,6 +30,9 @@ internal sealed class RecordingLogger : IAppLogger
 
     internal bool Logged(string eventName) => Entries.Any(entry => entry.EventName == eventName);
 
+    /// <summary>How many times the logger was disposed, so a shutdown can be told it flushed once.</summary>
+    internal int DisposeCount => Volatile.Read(ref _disposeCount);
+
     public void Write(
         LogLevel level,
         string eventName,
@@ -40,7 +45,11 @@ internal sealed class RecordingLogger : IAppLogger
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        Interlocked.Increment(ref _disposeCount);
+        return ValueTask.CompletedTask;
+    }
 }
 
 /// <summary>One line that was written, with everything the caller passed.</summary>
