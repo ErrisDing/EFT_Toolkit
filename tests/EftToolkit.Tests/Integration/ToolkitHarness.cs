@@ -235,6 +235,20 @@ internal sealed class ToolkitHarness : IAsyncDisposable
         {
             await WaitForWriteAsync(stableId).ConfigureAwait(false);
         }
+
+        // A display write is only the first half of a completed preset operation. The worker then
+        // persists the fingerprint it wrote so a later process can distinguish that ramp from one
+        // written by another application. Waiting only for the gateway leaves the caller racing
+        // that save: a test that starts a replacement harness immediately can read the older
+        // fingerprint and correctly refuse to restore what now looks like an external change.
+        Dictionary<string, string> expectedFingerprints = expectingWriteTo.ToDictionary(
+            stableId => stableId,
+            stableId => GammaRampFingerprint.Compute(Gateway.CurrentRamp(stableId)),
+            StringComparer.Ordinal);
+
+        await AsyncWait.UntilAsync(
+            () => RecoveryContains(expectedFingerprints),
+            "the recovery file records every ramp that was written").ConfigureAwait(false);
     }
 
     /// <summary>Waits until a ramp has reached a display.</summary>
@@ -249,6 +263,28 @@ internal sealed class ToolkitHarness : IAsyncDisposable
             () => GammaRampFingerprint.Compute(Gateway.CurrentRamp(stableId))
                 == GammaRampFingerprint.Compute(expected),
             $"{stableId} holds the ramp that was written");
+
+    private bool RecoveryContains(IReadOnlyDictionary<string, string> expectedFingerprints)
+    {
+        DisplayRecoverySnapshot? snapshot = new JsonDisplayRecoveryStore(_directory, Clock)
+            .LoadAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+
+        if (snapshot is null)
+        {
+            return false;
+        }
+
+        Dictionary<string, string> persisted = snapshot.Displays.ToDictionary(
+            entry => entry.StableId,
+            entry => entry.LastWrittenFingerprint,
+            StringComparer.Ordinal);
+
+        return expectedFingerprints.All(expected =>
+            persisted.TryGetValue(expected.Key, out string? fingerprint)
+            && string.Equals(fingerprint, expected.Value, StringComparison.Ordinal));
+    }
 
     public async ValueTask DisposeAsync()
     {
