@@ -135,6 +135,7 @@ jobs:
           $version = '${{ github.ref_name }}'.TrimStart('v')
 
           gh release create ${{ github.ref_name }} `
+            --repo "${{ github.repository }}" `
             --title "EFT Toolkit ${{ github.ref_name }}" `
             --notes "Windows 11 x64. Unpack and run EftToolkit.App.exe - no installer and no administrator rights." `
             "eft-toolkit-$version-win-x64.zip" `
